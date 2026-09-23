@@ -1,0 +1,7 @@
+/build*/
+/observations/
+/datasets/
+*.o
+*.cubin
+*.ptx
+__pycache__/
