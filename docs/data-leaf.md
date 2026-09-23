@@ -3,9 +3,13 @@
 Contract and algorithm selection recorded before implementation, 2026-09-23.
 This bounded harness launches the current production `radix_counts<4/8>`,
 `scan_tiles`, `scan_offsets`, `radix_move<4/8>` and `unique_keys<false/true>`
-bodies as top-level kernels. Its translation unit includes `src/data.cu`; it
-links `src/core.cu`, without linking a second copy from `gh`. There is no copied
-sort, scan or compaction implementation used as the tested operation.
+bodies as top-level kernels. In the three-file layout, mode 13 of
+`gpu_histogram.cu` imports the actual `gh::data_impl` kernel declarations from
+`gpu_histogram.hpp` and links the same `gh_data_leaf` object included in the
+production `gh` archive. The leaf object supplies the radix4/radix8 and unique-kernel
+specializations; the harness does not include or recompile their definitions.
+There is no copied sort, scan or compaction implementation used as the tested
+operation.
 
 The fixed shape is 1,025 rows and two feature-major u32 key columns. Two
 1,024-key radix blocks exercise one full block and one one-key tail. Radix4 has
@@ -54,10 +58,40 @@ logs, source/binary identities and failures. A pass certifies only the exercised
 production leaf bodies and shapes. It does not certify the CDP coordinator,
 feature tiling, metadata selection, full feature fitting, or arbitrary shapes.
 
-## Compile and binary audit
+## Current build and evidence boundary
 
-`data_leaf_checks` is an independent CMake/CTest target (`RUN_SERIAL`), built
-with `src/core.cu` and without `gh`. The Release, C++23, SM86, RDC build passed
+`data_leaf_checks` is a separate CMake/CTest target with `RUN_SERIAL` and
+`-UNDEBUG` for GPU assertions. The `GH_DATA_LEAF_IMPLEMENTATION` section compiles
+once into `gh_data_leaf`: the eight kernels, `block_prefix` and `first_key` have
+unchanged bodies. Its fixture section compiles separately from the same CUDA
+source. The harness links that object and CUDA runtime, without `gh` or the
+coordinator object. Build and run commands are:
+
+```sh
+cmake --build build-three --target data_leaf_checks --parallel 1
+ctest --test-dir build-three --output-on-failure -R '^data_leaf_checks$' -j 1
+```
+
+Only root runs GPU workloads, serially. The initial consolidated harness linked
+the full production object. Memcheck passed, but initcheck, racecheck and synccheck
+each exited 99 with "CUDA Dynamic Parallelism is not supported by the selected
+tool". Raw logs and exit statuses remain in
+`observations/consolidation/sanitizers/{data-leaf-*-1.log,exits-1.txt}`. Successful
+GPU oracle output did not make those unsupported tool runs pass.
+
+The leaf-object split resolves that observed applicability failure. Root ran
+memcheck, initcheck (all address spaces), racecheck and synccheck serially through
+the C++ collector; all four passed with both radix GPU receipts and clean error
+summaries. Raw output, commands, binary/tool hashes and activity gates are in
+`observations/consolidation/leaf-{memcheck,initcheck,racecheck,synccheck}-2/`.
+The new ELF symbol dump and coordinator-symbol search are preserved alongside
+them. These checks cover the exercised leaf shapes and do not certify the CDP
+coordinator. Historical binary correspondence below describes earlier binaries.
+
+## Historical compile and binary audit
+
+Before consolidation, `data_leaf_checks` included `src/data.cu` and was built
+with `src/core.cu` without linking `gh`. That Release, C++23, SM86, RDC build passed
 on 2026-09-23. `-UNDEBUG` keeps GPU assertions enabled. The first attempted build
 preceded CMake regeneration and reported an unknown target; both failure logs
 and the subsequent successful configure/build are preserved.
@@ -73,8 +107,8 @@ script, per-symbol hashes and source/object/executable hashes are retained in
 that the same compiled object was linked into both programs.
 
 The supplied CDP2 tooling report recommends one shared leaf object and complete
-exclusion of the coordinator object from the harness. This first harness does
-not meet that stronger construction: it compiles an inclusion of `data.cu`.
+exclusion of the coordinator object from the harness. That first harness did
+not meet that stronger construction: it compiled an inclusion of `data.cu`.
 The linked SM86 SASS and ELF contain no `fit_schema`, `finish`, CUDA device-launch
 or parameter-buffer functions; the device linker removed their uncalled paths.
 Other data kernels, `complete`, and device-runtime copy/fill kernels remain.
@@ -82,15 +116,15 @@ The executable has no embedded PTX program. These observations do not establish
 which modules a sanitizer accepts or inspects. Root must record actual kernel
 activity and unsupported diagnostics before claiming applicable coverage.
 
-A shared-object split, if needed, should move the eight unchanged leaf bodies
-and their private scan helper to one production object, expose narrow kernel
-declarations, and link that object into both targets. Keep coordinator code in
-a separate object excluded from the harness, then repeat binary comparison and
-the production correctness suite. No such production restructuring was performed.
+At the time of those receipts, the proposed follow-up was a shared leaf object
+with coordinator code in a separate, excluded object. The current
+`gh_data_leaf` construction now supplies that source/link separation; validation
+of the new binary remains a separate step.
 
 Root subsequently ran ordinary execution, memcheck and initcheck with
 `--initcheck-address-space all`; all three passed. Logs and exit statuses are
 `observations/data-leaf/{run,memcheck,initcheck}-1.*`. These results cover the
 top-level path and fixed shapes above; they do not remove the CDP control-plane
-gap. Racecheck was still running when this receipt was written, and synccheck
-was pending.
+gap. Racecheck was still running when that historical receipt was written, and
+synccheck was pending. These statements preserve the receipt's original scope
+and status; they are not new results for the three-file build.

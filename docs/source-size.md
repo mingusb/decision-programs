@@ -1,12 +1,53 @@
 # Source inventory and counting contract
 
+## Current three-file audit
+
+`build-three/gh_tools source-size` is the maintained C++ development tool. It
+counts the entire header, C++ source and CUDA source, including all tools,
+fixtures, macros and glue. CMake metadata also counts. No Python interpreter or
+source generator is needed by the new build or audit.
+
+```sh
+build-three/gh_tools source-size --self-test
+build-three/gh_tools source-size --output /absolute/new/source-size.json
+```
+
+Version 2 reports whole-file physical totals separately from category totals.
+Standalone `// GH_SOURCE_CATEGORY: production`, `tests` or `tooling` comments
+at declaration boundaries partition every byte; untagged root code defaults to
+tooling. Category sections are normalized separately, while physical totals
+normalize whole files. Category file counts overlap when a physical file
+contains several categories; byte counts do not overlap. Every maintained root
+source and all legacy source directories are included, without nested directory
+exclusions. Generated build outputs and preserved observations are artifacts,
+not maintained source.
+
+C++/CUDA and CMake retain the documented lexical rules and clang-format 21
+style. ICU supplies Unicode character properties, with its version recorded.
+Historical Python AST normalization is retained from the audited version-1
+receipt rather than approximated with a different lexer. The default receipt
+is `observations/source-size/current-20260923.json`; override it with
+`--baseline-receipt`. The baseline file set, all source SHA-256 hashes and
+category totals must match before those frozen measurements are accepted.
+Changed, missing or added baseline files fail the audit. An unfamiliar Python
+source cannot silently acquire approximate counts.
+
+The receipt discloses frozen-baseline provenance, current whole-file and section
+hashes, normalization, literal contents and exact source bytes/characters.
+The formatter and collector binaries are development infrastructure. Output
+receipts are created exclusively and never overwrite earlier observations.
+Moving code into three files does not itself establish a reduction, and the
+75% character-reduction target has not been achieved.
+
+## Historical version-1 audit
+
 This is a source-only audit, not evidence of equal capabilities or a completed
 replacement. Do not publish a reduction percentage until the applicable entries
 in `CAPABILITIES.md` have matching correctness, numerical, quality, resource and
 performance evidence. Passing the nine initial integrated GPU suites is useful
 component evidence; it does not establish that equivalence.
 
-`tools/source_size.py` reads both trees without modifying, compiling, importing
+At checkpoint `1263890`, `tools/source_size.py` read both trees without modifying, compiling, importing
 their application modules, or executing GPU code. The original tree is
 `/home/b/gpu_histogram-archive-20260923`. Its default fresh tree is this checkout.
 The script includes itself. The same normalization and token rules apply to both.

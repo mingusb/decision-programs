@@ -39,10 +39,11 @@ scale/translation invariance, invalid intervals and analytically balanced ratios
 
 ## Collection infrastructure
 
-`tools/collect.py` launches one external diagnostic tool into a new receipt
-directory. Python computes no application fixtures, metrics or benchmark
-statistics: process control, hashing, parser validation of diagnostic activity,
-and artifact preservation are development infrastructure. Retain command, selected
+`build/gh_tools collect` launches one external diagnostic tool into a new receipt
+directory. The command is implemented in `gpu_histogram.cpp`; it replaces the
+former `tools/collect.py` entry. Host process control, hashing, parser validation
+of diagnostic activity, and artifact preservation are development infrastructure;
+application fixtures, metrics and benchmark statistics remain on GPU. Retain command, selected
 environment, binary/tool identities, stdout/stderr, raw reports, exports, timeout
 and return status. Never overwrite evidence. Reject inherited competing injectors.
 Success requires actual matching tool activity and successful completion, not exit
@@ -56,6 +57,11 @@ Missing binaries, denied counters, unsupported modes, zero samples and decoder
 failure are failed evidence, preserved explicitly. NVBit graph counts aggregate
 unique functions, not graph launch instances. PC sampling is statistical and a
 short run can legitimately produce no evidence.
+
+The collector receipt identifies the compiled `gh_tools` executable. User
+`--kernel` and `--activity` expressions use UTF-8 PCRE2 with Unicode properties;
+compatibility with every Python-specific regular-expression extension is not
+claimed. Historical receipts still identify their original Python collector.
 
 [Current CUPTI restrictions](https://docs.nvidia.com/cupti/release-notes/release-notes.html#known-issues)
 matter for CDP2: activity tracing records host-launched kernels, not device child
@@ -73,18 +79,20 @@ CUPTI 13.4.58 and NVBit 1.8 under `/home/b/.local/opt/gpu-profiling`.
 Explicit `CUPTI_ROOT`/`NVBIT_ROOT` override SDK discovery. Receipt hashes bind the
 actual selected binaries; installed version labels alone do not prove compatibility.
 
-Examples (execution is coordinated by root, one command at a time):
+Examples (execution is coordinated by root, one command at a time). Substitute
+your configured build directory, such as `build-three`, for `build` below.
 
 ```sh
-python tools/collect.py memcheck observations/observe-memcheck -- /absolute/build/observe_checks
-python tools/collect.py nsys observations/observe-nsys --kernel 'gh::test::run' -- /absolute/build/observe_checks
-python tools/collect.py ncu observations/observe-ncu --kernel 'gh::test::run' -- /absolute/build/observe_checks
-python tools/collect.py cupti-trace observations/observe-cupti -- /absolute/build/observe_checks
-python tools/collect.py nvbit-graph observations/count-nvbit --workload graph -- /absolute/build/count_checks
-python tools/collect.py cuda-gdb observations/observe-debug -- /absolute/build/observe_checks
-python tools/collect.py cuobjdump observations/observe-sass -- /absolute/build/observe_checks
-python tools/collect.py nvdisasm observations/observe-cubin -- /absolute/module.cubin
-python tools/check_erasure.py /absolute/observe_checks.ptx
+cmake --build build --target gh_tools --parallel 1
+build/gh_tools collect memcheck observations/observe-memcheck -- /absolute/build/observe_checks
+build/gh_tools collect nsys observations/observe-nsys --kernel 'gh::test::observe_suite::run' -- /absolute/build/observe_checks
+build/gh_tools collect ncu observations/observe-ncu --kernel 'gh::test::observe_suite::run' -- /absolute/build/observe_checks
+build/gh_tools collect cupti-trace observations/observe-cupti -- /absolute/build/observe_checks
+build/gh_tools collect nvbit-graph observations/count-nvbit --workload graph -- /absolute/build/count_checks
+build/gh_tools collect cuda-gdb observations/observe-debug -- /absolute/build/observe_checks
+build/gh_tools collect cuobjdump observations/observe-sass -- /absolute/build/observe_checks
+build/gh_tools collect nvdisasm observations/observe-cubin -- /absolute/module.cubin
+build/gh_tools erasure /absolute/observe_checks.ptx
 ```
 
 The same collector supports `initcheck`, `racecheck`, `synccheck`, `cupti-range`,
@@ -94,8 +102,10 @@ The target runs in the receipt directory. For `nvbit-graph`, `--limit` bounds
 first-seen functions (maximum 100); for Nsight Compute/count it bounds launches.
 Sanitizer targets must print a GPU-authored completion message matching
 `--activity`; tool startup and an empty error summary alone cannot pass.
-`check_erasure.py` accepts only the exercised `disabled_probe` PTX kernel with its
+`gh_tools erasure` accepts only the exercised `disabled_probe` PTX kernel with its
 constant canary store and no loads, calls, atomics, barriers, branches or timer.
+The consolidated observation entry is `gh::test::observe_suite::run`; archived
+receipts naming `gh::test::run` describe the earlier binary.
 
 ## Sanitizer reporting scope
 
@@ -121,11 +131,12 @@ checks actual activity, then qualifies uninstrumented timing. Compare enabled an
 disabled codegen/resources and complete-operation overhead. Preserve every failed
 tool route; choose an alternative only with a distinct scope and receipt.
 
-Compile evidence: both observation translation units compile with nvcc C++23,
+Historical compile evidence before three-file consolidation: both observation translation units compile with nvcc C++23,
 O3, SM86 and RDC. `observations/observe/erasure.json` records the exercised disabled
 probe's PTX as a constant move, canary store and return, with no marker work.
 The compiled probe uses 8 registers and no stack or barriers. This proves the
 small disabled call path's erasure, not every future caller's entire codegen.
+The consolidated translation units require their own code-generation receipts.
 Root's initial six-suite integration run passed observation checks, including
 GPU interval ordering, independent work checks, multi-SM bounds and empty control.
 This is a timing-protocol correctness check, not an idle performance ranking.
@@ -142,7 +153,12 @@ described above remains a separate failed observation.
 The [current known limitations](https://docs.nvidia.com/compute-sanitizer/ReleaseNotes/index.html#known-limitations)
 explicitly exclude dynamic parallelism from those three checkers. Memcheck also
 does not check device-side CUDA API errors; production/test launch-return checks
-remain necessary even when host API reporting is enabled. A fixed top-level
-launch harness can check the actual production leaf kernels with GPU-generated
-inputs and GPU oracles. It would cover those leaf executions, not certify CDP2
-coordination, tail ordering or cross-kernel lifetime behavior.
+remain necessary even when host API reporting is enabled. The
+[direct data-kernel harness](data-leaf.md) checks the actual production leaf
+kernels with GPU-generated inputs and GPU oracles. Its receipts cover those leaf
+executions, not CDP2 coordination, tail ordering or cross-kernel lifetime behavior.
+The initial three-file build linked the full production object into that harness:
+memcheck passed, but initcheck, racecheck and synccheck each exited 99 with CDP
+unsupported. Preserve `observations/consolidation/sanitizers/*-1.log` and
+`exits-1.txt`; those runs are not coverage passes. The subsequent shared leaf
+object construction requires new binary and sanitizer receipts.
