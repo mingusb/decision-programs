@@ -1,0 +1,6 @@
+/build/
+__pycache__/
+*.ncu-rep
+*.ncu-repz
+*.nsys-rep
+*.sqlite

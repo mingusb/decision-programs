@@ -1,0 +1,31 @@
+Report 04: Dense histograms with small and medium bin counts
+Suggested PDF filename: 04-dense-histogram-algorithms.pdf
+
+I am building a state-of-the-art NVIDIA GPU histogram implementation in CUDA C++23. This report will be exported as a PDF and given to the engineer implementing and benchmarking it. Produce an implementation-oriented research report, not a general CUDA tutorial.
+
+No particular GPU or workload has been selected. Investigate a performance frontier across workloads and supported NVIDIA architectures; do not assume one kernel wins everywhere. Prioritize exact integer counting with device-resident input and dense output, while clearly labeling other contracts. Let N mean input items, B output bins, and K observed distinct keys. Cover current, publicly documented and available hardware/toolchains as of your research date, including relevant Ampere, Ada, Hopper, and Blackwell variants; label older results, previews, and unverified availability. Preserve the CUDA C++23 target and verify relevant language, compiler, and library support rather than assuming it.
+
+Use original papers, author artifacts, NVIDIA documentation, and actual implementation source as evidence. Follow promising references beyond these seed sources. Pin software versions and source commits, distinguish stable releases from development branches, and cite exact sections or code locations. Separate documented facts, published measurements, your deductions, and untested hypotheses. Do not invent benchmarks, citations, compilation results, APIs, or hardware throughput figures. If you cannot run CUDA, mark proposed code and experiments untested.
+
+For consequential performance claims, recover GPU, software version, operation semantics, N, B, input/counter types, distribution AND ordering, baseline, and timing boundary; mark missing fields. Do not infer superiority from incomparable experiments. Report negative evidence and uncertainty.
+
+Make the PDF self-contained: state the research date, define notation, use selectable text, keep code lines and tables narrow, and provide a numbered bibliography with full titles, authors/organizations, dates, URLs/DOIs, and versions. Include a claim-to-source table for major conclusions, algorithm sketches where useful, and prioritized experiments with predicted observations and falsification criteria. End with a concise implementation handoff: supported conclusions, open questions, and the next decisions this report enables. Proceed using explicit assumptions without waiting for clarification.
+
+Specific research assignment:
+
+Research exact, unweighted dense histograms for bin counts that range from very small to the practical limits of shared-memory privatization. Use direct valid bin IDs to isolate accumulation first; discuss numeric bin mapping as an added cost. Include byte-valued 256-bin counting as a major case without treating it as the entire problem. Sweep tiny N through streaming datasets much larger than cache, non-power-of-two B, and 32-bit versus 64-bit final counts.
+
+Compare direct global atomics; block-private and warp-private shared histograms; replicated/padded layouts; per-thread register counters when feasible; lane ownership and ballot/popcount counting; duplicate-key aggregation; thread-local run-length counting; local sort-and-count; and hybrid approaches. Include comparisons that show when each technique's overhead outweighs contention reduction. Explain dynamic indexing and possible register spilling rather than assuming a C++ local array resides in registers.
+
+For each serious candidate, show CUDA-style pseudocode for the complete operation: zeroing, load distribution, optional local aggregation, updates, flushing, and final merge. Analyze coalesced versus strided work assignment, items per thread, vectorized loads, alignment and tails, grid-stride loops, persistent grids, and compile-time specialization. Discuss both emitting partial histograms for reduction and directly atomically merging to final output.
+
+Derive parameterized costs in N, B, blocks, replicas, items per thread, local distinct-key counts, and counter width. Include intermediate memory traffic, initialization, barriers, occupancy, and merge work. Give symbolic or explicitly assumed crossover conditions; do not fabricate numeric thresholds. Distinguish an impressive block primitive from a fast complete device-wide histogram.
+
+Address partial-warp masks, barriers under divergence, safe shared-memory reuse, counter overflow within tiles and grid-stride loops, promotion to wider totals, and repeated calls. State exactly when narrow partial counters are safe. Analyze uniform random, single-hot, few-hot, locally correlated, and shuffled inputs.
+
+Deliver a candidate matrix with expected winning and losing regimes, resource formulas, annotated algorithm sketches, and a small prioritized experiment set. Identify which existing CUB primitives can implement a fair prototype and which custom kernels are needed to test a distinct idea. Separate established techniques from proposed combinations whose benefit remains unmeasured.
+
+Starting points:
+- https://github.com/NVIDIA/cccl/tree/main/cub/cub
+- https://developer.nvidia.com/blog/gpu-pro-tip-fast-histograms-using-shared-atomics-maxwell/
+- https://arxiv.org/abs/1701.01189

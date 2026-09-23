@@ -1,0 +1,32 @@
+Report 10: Performance models, microbenchmarks, and profiling
+Suggested PDF filename: 10-performance-models-and-profiling.pdf
+
+I am building a state-of-the-art NVIDIA GPU histogram implementation in CUDA C++23. This report will be exported as a PDF and given to the engineer implementing and benchmarking it. Produce an implementation-oriented research report, not a general CUDA tutorial.
+
+No particular GPU or workload has been selected. Investigate a performance frontier across workloads and supported NVIDIA architectures; do not assume one kernel wins everywhere. Prioritize exact integer counting with device-resident input and dense output, while clearly labeling other contracts. Let N mean input items, B output bins, and K observed distinct keys. Cover current, publicly documented and available hardware/toolchains as of your research date, including relevant Ampere, Ada, Hopper, and Blackwell variants; label older results, previews, and unverified availability. Preserve the CUDA C++23 target and verify relevant language, compiler, and library support rather than assuming it.
+
+Use original papers, author artifacts, NVIDIA documentation, and actual implementation source as evidence. Follow promising references beyond these seed sources. Pin software versions and source commits, distinguish stable releases from development branches, and cite exact sections or code locations. Separate documented facts, published measurements, your deductions, and untested hypotheses. Do not invent benchmarks, citations, compilation results, APIs, or hardware throughput figures. If you cannot run CUDA, mark proposed code and experiments untested.
+
+For consequential performance claims, recover GPU, software version, operation semantics, N, B, input/counter types, distribution AND ordering, baseline, and timing boundary; mark missing fields. Do not infer superiority from incomparable experiments. Report negative evidence and uncertainty.
+
+Make the PDF self-contained: state the research date, define notation, use selectable text, keep code lines and tables narrow, and provide a numbered bibliography with full titles, authors/organizations, dates, URLs/DOIs, and versions. Include a claim-to-source table for major conclusions, algorithm sketches where useful, and prioritized experiments with predicted observations and falsification criteria. End with a concise implementation handoff: supported conclusions, open questions, and the next decisions this report enables. Proceed using explicit assumptions without waiting for clarification.
+
+Specific research assignment:
+
+Develop an evidence-grounded performance model for complete exact CUDA histograms and an experimental method for diagnosing why a kernel misses its plausible limit. Cover both streaming and cache-resident inputs, tiny launch-limited workloads, and bin-count/skew regimes where atomic or instruction throughput matters more than input bandwidth.
+
+Define notation and units carefully. Account for input bytes, output materialization, zeroing, partial histograms, merge traffic, extra scans, bin classification, local aggregation, barriers, instruction work, occupancy, and launch/setup time. Distinguish a lower bound on data movement from an achievable throughput estimate. Use measured sustainable bandwidth and atomic rates where available and treat missing values as parameters. A logical input-bytes/time rate is not necessarily measured DRAM bandwidth.
+
+Model contention at thread, warp, block, and device scales. For independent samples with bin probabilities p_b, derive and qualify the expected number of distinct bins in a warp of W active lanes, E[D] = sum_b(1 - (1 - p_b)^W), and relate it to possible warp-aggregation savings. Explain why correlated or sorted input invalidates the independent-sample assumption. Include hottest-bin behavior, replica count, counter width, and merge costs without pretending a simple model captures every scheduling or cache effect.
+
+Propose isolated microbenchmarks for read throughput, shared/global atomics, key matching/voting, integer bin mapping, zeroing, partial reductions, barriers, and launch overhead. Separate dependent latency chains from independent throughput and prevent dead-code elimination. Specify controlled variables, resource use, cache state, warm-up, timing, and observable outputs. Explain how to relate microbench results back to a complete kernel without adding incompatible peak rates.
+
+Design a Nsight Systems/Nsight Compute workflow. Verify metric names and availability for the target architecture and tool version rather than inventing universal counters. Relate observations to competing hypotheses: memory traffic, hot atomics, shared-bank effects, register spills, occupancy, instruction issue, and synchronization. Explain profiler replay, serialization, cache control, instrumentation overhead, and why profiling runs should be separated from final timing.
+
+Deliver symbolic models with assumptions and worked illustrative cases clearly labeled as estimates, a diagnostic decision tree, a metric-to-hypothesis table, and prioritized experiments. Include model-disagreement checks and ablations. State what improvement would be physically plausible under each bottleneck and what result would falsify the current explanation. Do not use a roofline plot alone as proof of optimality.
+
+Starting points:
+- https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html
+- https://docs.nvidia.com/nsight-systems/UserGuide/index.html
+- https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html
+- https://github.com/NVIDIA/nvbench
