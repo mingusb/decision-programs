@@ -1,6 +1,6 @@
 # Contributing to Decision Programs
 
-Read PROJECT_GUIDE.md and docs/BUILDING.md before changing the build or public interface.
+Read PROJECT_GUIDE.md and docs/building.md before changing the build or public interface.
 
 - Keep one maintained conversion backend. New commands should call the shared implementation rather than introduce another converter.
 - Do not modify upstream XGBoost. Integrate through the supported public API.

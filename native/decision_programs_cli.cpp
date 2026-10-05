@@ -32,7 +32,7 @@ struct Options {
       if(equal!=std::string::npos)value=token.substr(equal+1);
       else if(switches.contains(key))value="true";
       else {need(i+1<arguments.size()&&!arguments[i+1].starts_with("--"),"--"+key+" requires a value");value=arguments[++i];}
-      need(key=="set"||key=="trial"||key=="tool-arg"||!values.contains(key),"--"+key+" may occur only once");
+      need(key=="set"||key=="trial"||key=="tool-arg"||key=="training-checkpoint"||!values.contains(key),"--"+key+" may occur only once");
       values[key].push_back(std::move(value));
     }
   }
@@ -251,10 +251,15 @@ and bindings without CUDA numerical execution. Sampling/regularization options:
   [--checkpoint DIRECTORY] [--resume DIRECTORY] [--set /SETTING=JSON_VALUE]
 )";
     if(command=="study")std::cout<<"Fixed study additionally needs --train-data FIT_DESCRIPTOR.json; --set /conversion/OPTION=VALUE controls conversion.\n";
-    if(command=="hpo")std::cout<<"Each --trial overrides base hyperparameters. VALID errors, then native bytes, then declared order select the winner. No TEST access.\n";
+    if(command=="hpo")std::cout<<"Each --trial overrides base hyperparameters. VALID errors, then native bytes, then declared order select the winner. No TEST access.\nOptional --training-checkpoint DIRECTORY (repeatable) reuses completed HPO models with matching dataset/library/parameters and sufficient rounds.\n";
     if(command=="combine")std::cout<<R"(Without --plan, also provide --teachers JSON_ARRAY --meta JSON_ARRAY
---baseline MODEL.json [--folds N] [--oof-gpu-byte-budget BYTES].
-Teacher/meta entries are hyperparameter objects. --stop-after-oof requires a
+--baseline MODEL.json --training-checkpoint COMPLETE_HPO_CHECKPOINT
+[--folds N] [--oof-gpu-byte-budget BYTES]. --training-checkpoint is repeatable.
+Teachers require completed HPO source checkpoints with the same dataset, FIT split,
+native library and normalized parameters (source rounds must cover teacher rounds).
+Prepare these with hpo --checkpoint, then use hpo --training-checkpoint to select
+the matching round-prefix baseline. See docs/CLI.md for the complete workflow.
+Teacher/meta entries are hyperparameter objects. --stop-after-oof requires an output
 checkpoint. OOF composition and VALID selection do not imply improved TEST accuracy.
 )";
   }
@@ -346,7 +351,7 @@ int dispatch(const std::string&cmd,const Options&o){
     auto path=input.json("plan.json",plan);Args command={target.string(),o.has("check")?"--check-plan":"fit",path.string(),pin(path)};if(!o.has("check"))command.push_back(absolute(o.required("out")).string());return launch(command,o,input);
   }
   if(cmd=="study"||cmd=="hpo"||cmd=="combine"){
-    o.allow(allowed({"library","out","plan","train-data","trial","checkpoint","resume","stop-after-oof","teachers","meta","baseline","folds","oof-gpu-byte-budget"},true,true));
+    o.allow(allowed({"library","out","plan","train-data","trial","checkpoint","training-checkpoint","resume","stop-after-oof","teachers","meta","baseline","folds","oof-gpu-byte-budget"},true,true));
     auto data=dataset(o,false,input);J plan=o.has("plan")?file_json(o.get("plan")):J{{"TEST_read",false},{"VALID_read",false},{"hyperparameters",hyperparameters(o)}};
     bind_library(plan,o);
     if(!o.has("plan")){
@@ -360,7 +365,18 @@ int dispatch(const std::string&cmd,const Options&o){
     if(cmd=="hpo")need(plan.value("workflow",std::string{})=="native-accuracy-search-1","hpo requires native-accuracy-search-1 workflow");
     if(cmd=="combine")need(plan.value("workflow",std::string{})=="native-nonlinear-combination-1","combine requires native-nonlinear-combination-1 workflow");
     if(o.has("trial")){plan["trials"]=J::array();for(const auto&t:o.values.at("trial"))plan["trials"].push_back(parse(t));}
+    if(o.has("training-checkpoint")){
+      need(cmd!="study","--training-checkpoint is supported by hpo and combine");
+      plan["training_source_checkpoints"]=J::array();std::set<std::string> seen;
+      for(const auto&source:o.values.at("training-checkpoint")){
+        auto root=absolute(source);need(fs::is_directory(root),"--training-checkpoint directory does not exist: "+root.string());
+        need(seen.insert(root.string()).second,"duplicate --training-checkpoint directory");plan["training_source_checkpoints"].push_back(root.string());
+      }
+    }
     if(o.has("checkpoint"))plan["experiment_checkpoint_path"]=absolute(o.get("checkpoint")).string();overrides(plan,o);
+    if(cmd=="combine"&&!o.has("plan")&&!o.has("resume")&&!plan.contains("experiment_resume_from")&&!plan.value("response_reuse_completed_oof",false))
+      need(plan.contains("training_source_checkpoints")&&plan.at("training_source_checkpoints").is_array()&&!plan.at("training_source_checkpoints").empty(),
+           "combine requires --training-checkpoint COMPLETE_HPO_CHECKPOINT; prepare teachers with hpo --checkpoint and select a matching prefix baseline with hpo --training-checkpoint (see docs/CLI.md)");
     auto path=input.json("plan.json",plan),descriptor=input.json("data.json",data);Args command={backend("class_study").string(),path.string(),descriptor.string(),absolute(o.required("out")).string()};
     if(o.has("resume")){command.push_back("--resume");command.push_back(absolute(o.get("resume")).string());}if(o.has("stop-after-oof"))command.push_back("--stop-after-oof");return launch(command,o,input);
   }
@@ -428,7 +444,7 @@ int dispatch(const std::string&cmd,const Options&o){
     need(fs::is_directory(root),"proof source directory missing; supply --directory formal");
     if(o.has("check")){
       auto cmake=program("cmake");need(!cmake.empty(),"CMake missing for proof dependency/replay checks");auto script=(executable().parent_path()/"../share/decision-programs/cmake/CheckLean.cmake").lexically_normal();if(!fs::is_regular_file(script))script=root.parent_path()/"cmake/CheckLean.cmake";need(fs::is_regular_file(script),"portable proof checker missing beside installation/source");
-      auto output=o.has("out")?absolute(o.get("out")):fs::temp_directory_path()/"decision-programs-proof-checks";Args command={cmake.string(),"-DGH_PROOF_SOURCE_ROOT="+root.string(),"-DGH_PROOF_OUTPUT_ROOT="+output.string()};if(o.has("lean"))command.push_back("-DGH_LEAN_EXECUTABLE="+absolute(o.get("lean")).string());command.insert(command.end(),{"-P",script.string()});return launch(command,o,input);
+      auto output=o.has("out")?absolute(o.get("out")):fs::temp_directory_path()/"decision-programs-proof-checks";Args command={cmake.string(),"-DDP_PROOF_SOURCE_ROOT="+root.string(),"-DDP_PROOF_OUTPUT_ROOT="+output.string()};if(o.has("lean"))command.push_back("-DDP_LEAN_EXECUTABLE="+absolute(o.get("lean")).string());command.insert(command.end(),{"-P",script.string()});return launch(command,o,input);
     }
     J files=J::array();for(const auto&e:fs::recursive_directory_iterator(root))if(e.is_regular_file()&&e.path().extension()==".lean")files.push_back(fs::relative(e.path(),root).string());std::cout<<J{{"directory",root.string()},{"Lean_sources",files},{"freshly_checked",false},{"CUDA_implementation_refinement_claimed",false}}.dump(2)<<'\n';return 0;
   }

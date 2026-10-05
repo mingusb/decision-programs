@@ -73,7 +73,7 @@ libraries from unrelated Toolkit versions.
 The default build uses two concurrent compiler processes. CUDA conversion
 translation units are large; reduce concurrency with `cmake --build
 build/cuda-release --parallel 1` when host memory is limited. For profiling
-builds, configure with `-DGH_CUDA_LINEINFO=ON`; measured release timings should
+builds, configure with `-DDP_CUDA_LINEINFO=ON`; measured release timings should
 use the intended uninstrumented build.
 
 Without CUDA:
@@ -138,7 +138,7 @@ Install the declared Lean 4.34.1 toolchain, then configure the executable path
 and request the proof target:
 
 ```sh
-cmake --preset host-tools -DGH_LEAN_EXECUTABLE=/absolute/lean/bin/lean
+cmake --preset host-tools -DDP_LEAN_EXECUTABLE=/absolute/lean/bin/lean
 cmake --build build/host-tools --target check-proofs
 ```
 

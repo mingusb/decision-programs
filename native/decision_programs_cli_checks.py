@@ -132,6 +132,29 @@ class CliChecks(unittest.TestCase):
         self.assertEqual(plan["row_stride"], 2)
         self.assertTrue(Path(plan["values"]).is_file())
 
+    def test_hpo_and_combine_bind_completed_source_checkpoint_paths(self):
+        sources = [self.root / "teacher-checkpoint", self.root / "other-teachers"]
+        for source in sources:
+            source.mkdir()
+        args = ("--data", self.csv, "--target", "label", "--fit-rows", "2",
+                "--output", self.root / "new-study")
+        hpo = self.dry("hpo", *args, "--rounds", "1", "--training-checkpoint", sources[0],
+                       "--training-checkpoint", sources[1])
+        self.assertEqual(hpo["generated_inputs"]["plan.json"]["training_source_checkpoints"],
+                         [str(source) for source in sources])
+        combine_args = (*args, "--teachers", '[{"rounds":1,"max_depth":2}]',
+                        "--meta", '[{"rounds":1,"max_depth":2}]', "--baseline", self.source)
+        self.assertIn("combine requires --training-checkpoint", self.call("combine", *combine_args, status=2).stderr)
+        combine = self.dry("combine", *combine_args, "--training-checkpoint", sources[0])
+        plan = combine["generated_inputs"]["plan.json"]
+        self.assertEqual(plan["training_source_checkpoints"], [str(sources[0])])
+        self.assertEqual(plan["required_baseline_sha256"], hashlib.sha256(self.source.read_bytes()).hexdigest())
+        self.assertFalse((self.root / "new-study").exists())
+        self.assertIn("duplicate", self.call("hpo", *args, "--training-checkpoint", sources[0],
+                                              "--training-checkpoint", sources[0], status=2).stderr)
+        self.assertIn("directory does not exist", self.call("hpo", *args, "--training-checkpoint",
+                                                            self.root / "missing", status=2).stderr)
+
     def test_evaluation_reuses_mapping_for_one_class_subset(self):
         mapping = {"class_label_mapping": [{"label": "cat", "class": 0}, {"label": "dog", "class": 1}]}
         (self.model_dir / "input-transport.json").write_text(json.dumps(mapping))

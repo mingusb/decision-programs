@@ -58,7 +58,7 @@ J self_test(){
   check("truncated_body",[&]{adapt(base.substr(0,base.size()-1));},false);
   check("trailing_byte",[&]{adapt(base+"x");},false);
   check("weighted_regional_magic_explicit_refusal",[&]{auto b=base;b.replace(0,8,"CLSRMDL1");adapt(b);},false);
-  check("probability_tree_magic_explicit_refusal",[&]{auto b=base;b.replace(0,8,"GHDTREE1");adapt(b);},false);
+  check("probability_tree_magic_explicit_refusal",[&]{auto b=base;b.replace(0,8,"DPDTREE1");adapt(b);},false);
   corrupt("zero_features",8,0,8);corrupt("feature_count_unrepresentable",8,U(INT32_MAX)+1,8);
   corrupt("one_class_unsupported_by_shared_classifier",16,1,8);corrupt("class_count_unrepresentable",16,U(UINT32_MAX)+1,8);
   corrupt("zero_nodes",24,0,8);corrupt("overflow_node_count",24,UINT64_MAX,8);

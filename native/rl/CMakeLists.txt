@@ -111,8 +111,8 @@ install(TARGETS rl_session class_apply_rl rl_resident_checks rl_hash_checks RUNT
 
 if(BUILD_TESTING)
   add_test(NAME rl_existing_output_preserved COMMAND "${CMAKE_COMMAND}"
-    "-DGH_RL_TEST_EXECUTABLE=$<TARGET_FILE:rl_session>"
-    "-DGH_RL_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/rl-existing-output"
+    "-DDP_RL_TEST_EXECUTABLE=$<TARGET_FILE:rl_session>"
+    "-DDP_RL_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/rl-existing-output"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/CheckRefusedOutput.cmake")
   set_tests_properties(rl_existing_output_preserved PROPERTIES LABELS host)
   add_test(NAME rl_resident_metadata COMMAND rl_resident_checks --cpu)

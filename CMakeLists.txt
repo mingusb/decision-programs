@@ -176,30 +176,30 @@ if(BUILD_TESTING)
   target_link_libraries(class_io_checks PRIVATE dp_host_options)
   target_compile_options(class_io_checks PRIVATE -UNDEBUG)
   add_test(NAME class_io_checks COMMAND "${CMAKE_COMMAND}"
-    "-DGH_TEST_EXECUTABLE=$<TARGET_FILE:class_io_checks>"
-    "-DGH_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/parser"
-    "-DGH_TEST_ARGUMENT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/fixtures/xgboost-parser.json"
+    "-DDP_TEST_EXECUTABLE=$<TARGET_FILE:class_io_checks>"
+    "-DDP_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/parser"
+    "-DDP_TEST_ARGUMENT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/fixtures/xgboost-parser.json"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunFreshFixture.cmake")
   set_tests_properties(class_io_checks PROPERTIES LABELS host)
   add_test(NAME class_tree_adapter_self_test COMMAND "${CMAKE_COMMAND}"
-    "-DGH_TEST_EXECUTABLE=$<TARGET_FILE:class_tree_adapter>"
-    "-DGH_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/tree-adapter" "-DGH_TEST_ARGUMENT=self-test"
+    "-DDP_TEST_EXECUTABLE=$<TARGET_FILE:class_tree_adapter>"
+    "-DDP_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/tree-adapter" "-DDP_TEST_ARGUMENT=self-test"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunFreshFixture.cmake")
   set_tests_properties(class_tree_adapter_self_test PROPERTIES LABELS host)
   if(DP_BUILD_REGIONAL_XAI)
     add_executable(class_rank_xai_export_checks native/class_rank_xai_export_checks.cpp)
     target_link_libraries(class_rank_xai_export_checks PRIVATE dp_regional_xai)
     add_test(NAME class_rank_xai_export_checks COMMAND "${CMAKE_COMMAND}"
-      "-DGH_TEST_EXECUTABLE=$<TARGET_FILE:class_rank_xai_export_checks>"
-      "-DGH_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/regional-xai"
+      "-DDP_TEST_EXECUTABLE=$<TARGET_FILE:class_rank_xai_export_checks>"
+      "-DDP_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/regional-xai"
       -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunFreshFixture.cmake")
     set_tests_properties(class_rank_xai_export_checks PROPERTIES LABELS host)
   endif()
   add_executable(class_study_checkpoint_checks native/class_study_checkpoint_checks.cpp)
   target_link_libraries(class_study_checkpoint_checks PRIVATE dp_host_options)
   add_test(NAME class_study_checkpoint_checks COMMAND "${CMAKE_COMMAND}"
-    "-DGH_TEST_EXECUTABLE=$<TARGET_FILE:class_study_checkpoint_checks>"
-    "-DGH_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/checkpoint"
+    "-DDP_TEST_EXECUTABLE=$<TARGET_FILE:class_study_checkpoint_checks>"
+    "-DDP_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/checkpoint"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunFreshFixture.cmake")
   set_tests_properties(class_study_checkpoint_checks PROPERTIES LABELS host)
   if(DP_ENABLE_CUDA)
@@ -229,9 +229,9 @@ if(DP_INSTALL_PROOFS)
     PATTERN ".lake" EXCLUDE PATTERN "TacticProbe*.lean" EXCLUDE)
 endif()
 add_custom_target(check-proofs COMMAND "${CMAKE_COMMAND}"
-  "-DGH_PROOF_SOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/formal"
-  "-DGH_PROOF_OUTPUT_ROOT=${CMAKE_BINARY_DIR}/proof-checks"
-  "-DGH_LEAN_EXECUTABLE=${DP_LEAN_EXECUTABLE}"
+  "-DDP_PROOF_SOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/formal"
+  "-DDP_PROOF_OUTPUT_ROOT=${CMAKE_BINARY_DIR}/proof-checks"
+  "-DDP_LEAN_EXECUTABLE=${DP_LEAN_EXECUTABLE}"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLean.cmake"
   COMMENT "Elaborate and independently replay maintained Lean modules" USES_TERMINAL)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")

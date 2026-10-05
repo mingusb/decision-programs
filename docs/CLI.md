@@ -130,17 +130,39 @@ Fixed `study` accepts `--train-data FIT_DESCRIPTOR.json` plus `--data
 EVAL_DESCRIPTOR.json`, or an advanced `--plan PLAN.json`. Its construction finishes
 before deferred VALID evaluation.
 
+Composition requires completed HPO source checkpoints. The following small
+workflow uses the shipped synthetic CSV, with 24 FIT rows and six VALID rows.
+First prepare both teacher sources and retain their complete checkpoint. Then
+select the one-round prefix baseline from those exact sources:
+
 ```sh
-decision-programs combine --data evaluation.csv --target label --fit-rows 100 \
-  --teachers '[{"rounds":10,"max_depth":2},{"rounds":10,"max_depth":3}]' \
-  --meta '[{"rounds":5,"max_depth":2}]' --baseline trained/model.json \
-  --folds 3 --output composition
+decision-programs hpo --data examples/quickstart.csv --target label --fit-rows 24 \
+  --rounds 2 --depth 2 --trial '{"max_depth":2}' --trial '{"max_depth":3}' \
+  --checkpoint teacher-checkpoint --output teacher-sources
+decision-programs hpo --data examples/quickstart.csv --target label --fit-rows 24 \
+  --rounds 1 --depth 2 --trial '{"max_depth":2}' --trial '{"max_depth":3}' \
+  --training-checkpoint teacher-checkpoint --output teacher-prefixes
+decision-programs combine --data examples/quickstart.csv --target label --fit-rows 24 \
+  --teachers '[{"rounds":1,"max_depth":2},{"rounds":1,"max_depth":3}]' \
+  --meta '[{"rounds":1,"max_depth":2}]' --baseline teacher-prefixes/selected-model.json \
+  --training-checkpoint teacher-checkpoint --folds 2 --output composition
 ```
 
-The declared teacher bank must retain the supplied baseline's identity. OOF
-settings, baseline provenance, prefix reuse and frozen refit/final-evaluation
-workflows are also available through advanced plans. Composition results do not
-imply improved TEST accuracy.
+The second command reuses the completed sources instead of fitting new models.
+Both it and `combine` slice the same source models to the declared teacher rounds,
+so the selected prefix baseline is retained in the teacher bank. An unrelated
+`train` output is not a compatible baseline merely because its parameters match.
+
+`--training-checkpoint DIRECTORY` is repeatable for `hpo` and `combine`. Source
+checkpoints must be complete native HPO checkpoints with exactly matching dataset,
+FIT/VALID split, native-library binding and normalized training parameters; their
+round count must cover the requested prefix. The backend verifies these bindings
+and the baseline's exact identity. `--checkpoint` names a new workflow's output
+checkpoint, while `--training-checkpoint` supplies completed input models.
+
+OOF settings, baseline provenance, prefix reuse and frozen refit/final-evaluation
+workflows are also available through advanced plans. These tiny commands exercise
+the interface; composition results do not imply improved TEST accuracy.
 
 ### Prediction and scientific interrogation
 
