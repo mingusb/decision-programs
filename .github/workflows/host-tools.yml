@@ -1,0 +1,22 @@
+name: Host CLI and contract checks
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  host-tools:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y g++-14 ninja-build libssl-dev nlohmann-json3-dev
+      - name: Install CMake
+        run: python3 -m pip install --user 'cmake>=3.30,<5'
+      - name: Configure metadata tools
+        run: ~/.local/bin/cmake --preset host-tools -DCMAKE_CXX_COMPILER=g++-14
+      - name: Build
+        run: ~/.local/bin/cmake --build --preset host-tools
+      - name: Test without GPU execution
+        run: ~/.local/bin/ctest --preset host-tools
+      - name: Check install layout
+        run: |
+          ~/.local/bin/cmake --install build/host-tools --prefix "$RUNNER_TEMP/decision-programs"
+          "$RUNNER_TEMP/decision-programs/bin/decision-programs" --help
+          "$RUNNER_TEMP/decision-programs/bin/decision-programs" --version

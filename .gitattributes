@@ -1,0 +1,3 @@
+# Keep source-byte identities stable across Windows and Linux checkouts.
+* -text
+*.png binary

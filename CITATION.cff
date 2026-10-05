@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this research software, please cite the repository and accompanying manuscript."
+title: "Decision Programs: Compact decisions from boosted trees"
+type: software
+authors:
+  - family-names: Mingus
+    given-names: Brian
+repository-code: "https://github.com/mingusb/decision-programs"
+url: "https://brianmingus.com/papers/exact-decisions-white-paper.pdf"
+license: MIT
