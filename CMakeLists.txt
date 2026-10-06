@@ -89,7 +89,7 @@ if(DP_ENABLE_CUDA)
   target_link_libraries(dp_class_conversion PUBLIC dp_class_runtime)
   add_library(dp_class_study STATIC
     native/class_study_data.cu native/class_study_train.cu native/class_study_oof.cu
-    native/class_study_composition.cu native/class_study_process.cu)
+    native/class_study_composition.cu native/class_study_process.cu native/class_study_holdout.cu)
   target_link_libraries(dp_class_study PUBLIC dp_class_conversion)
 
   function(dp_cuda_backend name)
@@ -165,7 +165,7 @@ endif()
 install(TARGETS ${dp_backend_targets} RUNTIME DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/decision-programs)
 
 if(BUILD_TESTING)
-  foreach(dp_check decision_programs_model_format_checks class_model_dataset_contract_checks class_study_batch_options_checks class_symbolic_test)
+  foreach(dp_check class_study_nested_holdout_checks decision_programs_model_format_checks class_model_dataset_contract_checks class_study_batch_options_checks class_symbolic_test)
     add_executable(${dp_check} native/${dp_check}.cpp)
     target_link_libraries(${dp_check} PRIVATE dp_host_options)
     target_compile_options(${dp_check} PRIVATE -UNDEBUG)
@@ -207,6 +207,15 @@ if(BUILD_TESTING)
     target_link_libraries(class_study_train_checks PRIVATE dp_class_study)
     add_test(NAME class_study_train_checks COMMAND class_study_train_checks)
     set_tests_properties(class_study_train_checks PROPERTIES LABELS host)
+    add_executable(class_study_holdout_checks native/class_study_holdout_checks.cu)
+    target_link_libraries(class_study_holdout_checks PRIVATE dp_class_study)
+    add_test(NAME class_study_holdout_metadata_checks COMMAND class_study_holdout_checks --metadata-only)
+    set_tests_properties(class_study_holdout_metadata_checks PROPERTIES LABELS host)
+    add_test(NAME class_study_holdout_cuda_checks COMMAND "${CMAKE_COMMAND}"
+      "-DDP_TEST_EXECUTABLE=$<TARGET_FILE:class_study_holdout_checks>"
+      "-DDP_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/holdout"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunFreshFixture.cmake")
+    set_tests_properties(class_study_holdout_cuda_checks PROPERTIES LABELS gpu RUN_SERIAL TRUE)
     add_test(NAME class_runtime_cuda_fixture COMMAND class_runtime_cli fixture)
     set_tests_properties(class_runtime_cuda_fixture PROPERTIES LABELS gpu RUN_SERIAL TRUE)
   endif()
@@ -219,6 +228,15 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/native/decision_programs_cli_checks.py"
       "$<TARGET_FILE:decision-programs>")
     set_tests_properties(cli_transport_checks PROPERTIES LABELS host)
+    if(DP_ENABLE_CUDA)
+      add_test(NAME class_study_nested_holdout_integration COMMAND "${CMAKE_COMMAND}"
+        "-DDP_TEST_EXECUTABLE=${Python3_EXECUTABLE}"
+        "-DDP_TEST_ARGUMENT=${CMAKE_CURRENT_SOURCE_DIR}/native/class_study_nested_holdout_integration_checks.py;$<TARGET_FILE:decision-programs>"
+        "-DDP_TEST_ROOT=${CMAKE_BINARY_DIR}/test-artifacts/nested-integration"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunFreshFixture.cmake")
+      set_tests_properties(class_study_nested_holdout_integration PROPERTIES
+        LABELS gpu RUN_SERIAL TRUE SKIP_REGULAR_EXPRESSION "SKIP: XGBOOST_LIBRARY")
+    endif()
   endif()
 endif()
 

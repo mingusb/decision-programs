@@ -72,7 +72,7 @@ process. Retained CSV files are input artifacts, not CUDA model working memory.
 | `import-tree` | Structural CLSTREE1 import with a bound origin/domain contract | `class_tree_adapter` |
 | `study` | Fixed trials: train, convert, simplify, then evaluate | `class_study` |
 | `hpo` | Declared native trials selected on VALID | `class_study`, `native-accuracy-search-1` |
-| `combine` / `nonlinear` | OOF nonlinear teacher composition and VALID selection | `class_study`, `native-nonlinear-combination-1` |
+| `combine` / `nonlinear` | OOF nonlinear teacher composition, VALID selection and optional nested holdout confirmation | `class_study`, `native-nonlinear-combination-1` |
 | `rl` | Qualified experimental regional equivalent-encoding policy search | `rl_session` |
 | `evaluate` | Compare runtime/native class IDs and FIT/VALID scores | `class_model_evaluate` |
 | `simplify` | Exact adjacent-predicate shared-DAG rewrites | `class_model_simplify` |
@@ -111,8 +111,9 @@ decision-programs evaluate --model simplified --source trained/model.json \
 
 Evaluation CSV string labels reuse the source/model's `input-transport.json`, or
 an explicit `--label-map FILE`. Missing or unseen mappings are rejected. Numeric
-labels remain direct class IDs. Evaluation needs both FIT and VALID rows and
-performs no training, selection or TEST access.
+labels remain direct class IDs when the trained mapping is numeric; numeric-looking
+tokens in a categorical mapping retain their original mapped IDs. Evaluation needs
+both FIT and VALID rows and performs no training, selection or TEST access.
 
 ### Studies and composition
 
@@ -163,6 +164,103 @@ checkpoint, while `--training-checkpoint` supplies completed input models.
 OOF settings, baseline provenance, prefix reuse and frozen refit/final-evaluation
 workflows are also available through advanced plans. These tiny commands exercise
 the interface; composition results do not imply improved TEST accuracy.
+
+### Nested holdout confirmation
+
+`combine` optionally confirms its frozen inner VALID winner against the required,
+predeclared baseline using a separate fresh holdout dataset:
+
+```sh
+decision-programs combine --data development.csv --target label --fit-rows 100 \
+  --teachers '[{"rounds":1,"max_depth":2},{"rounds":1,"max_depth":3}]' \
+  --meta '[{"rounds":1,"max_depth":2}]' --baseline teacher-prefixes/selected-model.json \
+  --training-checkpoint teacher-checkpoint --folds 2 \
+  --nested-holdout --holdout-depth 2 --holdout-data fresh-holdout.csv \
+  --output confirmed-composition
+```
+
+The source checkpoint and baseline must still match the development dataset and
+declared teacher prefixes as described above. `--nested-holdout` defaults to depth
+one. Supplying `--holdout-depth N` or `--holdout-data FILE` also enables
+confirmation. Every enabled invocation requires `--holdout-data`; depth must be a
+positive integer no larger than the holdout row count. These options apply only to
+`combine` and its `nonlinear` alias; `hpo` and fixed `study` reject them.
+
+The backend divides the fresh holdout rows into N disjoint, balanced, contiguous
+blocks in input order, with block sizes differing by at most one row. At each gate
+the same frozen inner winner must make **strictly fewer errors** than the same
+required baseline. A tie or loss selects the baseline and stops confirmation. The
+candidate is retained only when it passes every gate. Holdout labels never fit or
+retrain a model, rank another candidate, or trigger a retry. Numerical evaluation
+of both models runs on the GPU. Existing FIT/VALID HPO selection and OOF fitting
+retain their existing behavior.
+
+This is nested holdout confirmation, not full nested cross-validation or a final
+TEST evaluation. Reserve a separate final TEST dataset for evaluating the selected
+model once. Freshness and appropriate group, patient, or institution separation
+remain the caller's responsibility. Repeated search consumes the holdout: reusing
+its labels for later search decisions does not provide independent confirmation.
+Increasing depth leaves fewer samples per gate. Passing the gates is neither a
+statistical significance test nor a guarantee of improved TEST performance.
+The interface rejects shared development/holdout source paths, reused dense input
+paths, and copies with identical feature contents; those checks cannot establish
+that two datasets have independent provenance.
+
+CSV holdout transport uses the same `--target` and `--header` settings as the
+development CSV. Feature names and order must match exactly. Labels reuse the
+development class mapping and full class count, including classes absent from the
+holdout. A numeric-looking token in a categorical development mapping keeps its
+original mapped ID. Unknown categorical labels or numeric IDs outside the
+development class range are rejected. For non-CSV development inputs, supply the
+original `--label-map INPUT_TRANSPORT.json` when the holdout CSV uses mapped string
+labels. The frontend converts input formats on the host without model evaluation.
+
+`--holdout-data HOLDOUT_DESCRIPTOR.json` accepts little-endian FP32 features and
+uint32 class IDs already in development order. The dedicated descriptor declares
+the role explicitly:
+
+```json
+{
+  "format": "dense-fp32-u32-holdout-labels-1",
+  "role": "HOLDOUT",
+  "training_allowed": false,
+  "selection_allowed": true,
+  "TEST_read": false,
+  "features": 4,
+  "classes": 3,
+  "rows": 40,
+  "row_stride": 4,
+  "values_path": "/absolute/fresh-holdout.fp32",
+  "values_sha256": "SHA256_OF_EXACT_FEATURE_FILE",
+  "labels_path": "/absolute/fresh-holdout.u32",
+  "labels_sha256": "SHA256_OF_EXACT_LABEL_FILE",
+  "preprocessing": "Same input representation as development; class IDs preserve its mapping"
+}
+```
+
+Replace the SHA placeholders with the actual 64-character hexadecimal hashes.
+Feature and class dimensions must equal the development descriptor. No `FIT_rows`
+or `VALID_rows` fields are allowed, including zero counts. The CUDA backend
+validates file pins, extents and class-ID bounds before evaluation.
+
+The generated reviewable plan contains
+`nested_holdout: {"depth": N, "dataset": HOLDOUT_DESCRIPTOR,
+"acceptance_rule": "strictly_fewer_errors_at_every_level"}`. Advanced plans use
+the same object; no alternative acceptance rule is supported. Use `--dry-run` or
+`--save-plan` to inspect and retain it before numerical execution.
+
+For a holdout arranged into contiguous groups, an advanced plan can declare
+`nested_holdout.partition_rows` to place gate boundaries between groups. For
+example, a depth-two holdout with 40 rows can use
+`--set '/nested_holdout/partition_rows=[18,22]'`. Supply one positive count per
+level, summing to the holdout row count. The backend preserves the declared row
+order and boundaries; arranging independent groups remains the caller's job.
+Omitting this setting retains the balanced row blocks described above.
+
+With `--checkpoint`, final saves, explicit checkpoint requests, and stop saves
+retain frozen model identities, the gate cursor, and committed results. Resuming
+committed decisions does not rescore those gates. A crash before checkpoint
+publication may repeat evaluation of the same frozen pair on an uncommitted gate.
 
 ### Prediction and scientific interrogation
 

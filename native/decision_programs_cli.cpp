@@ -19,7 +19,7 @@ namespace fs=std::filesystem;
 using J=nlohmann::json;
 using Args=std::vector<std::string>;
 void need(bool ok,const std::string& why){if(!ok)throw std::invalid_argument(why);}
-const std::set<std::string> switches={"help","dry-run","check","gpu","stop-after-oof","all","list","diagnostic-trajectories"};
+const std::set<std::string> switches={"help","dry-run","check","gpu","stop-after-oof","all","list","diagnostic-trajectories","nested-holdout"};
 struct Options {
   std::map<std::string,Args> values; Args tail;
   Options(const Args& arguments){
@@ -120,16 +120,25 @@ CsvFiles retain_csv(const std::string&original,const decision_programs_csv::Dens
   auto retain=[&](const char*name,const std::string&bytes){auto path=dir/name;if(fs::exists(path))need(dpnative::read_text(path)==bytes,"retained CSV input changed/corrupt: "+path.string());else dpnative::atomic_text(path,bytes);return path;};
   retain("source.csv",original);return {retain("values.fp32",dense.values),retain("labels.u32",dense.labels)};
 }
-void remap_labels(decision_programs_csv::Dense&dense,const J&document){
-  const auto&mapping=document.is_array()?document:document.at("class_label_mapping");need(mapping.is_array(),"label map must be an array or input-transport.json");if(dense.label_mapping.is_null()||dense.label_mapping.empty())return;
+void remap_labels(decision_programs_csv::Dense&dense,const J&document,const std::string&original,const std::string&target){
+  const auto&mapping=document.is_array()?document:document.at("class_label_mapping");need(mapping.is_array(),"label map must be an array or input-transport.json");
+  if(mapping.empty()){need(dense.label_mapping.empty(),"CSV target is absent from the trained label map");return;}
   std::map<std::string,std::uint32_t>required;std::set<std::uint32_t>used_ids;std::uint32_t classes=0;for(const auto&entry:mapping){const auto&value=entry.at("class");need(value.is_number_integer()&&(value.is_number_unsigned()||value.get<std::int64_t>()>=0),"label-map class must be a nonnegative integer");auto number=value.get<std::uint64_t>();need(number<UINT32_MAX,"label map class exceeds capacity");auto id=std::uint32_t(number);need(required.emplace(entry.at("label").get<std::string>(),id).second,"duplicate label-map label");need(used_ids.insert(id).second,"duplicate label-map class ID");classes=std::max(classes,id+1);}
-  std::vector<std::uint32_t>translation(dense.classes);for(const auto&entry:dense.label_mapping){auto found=required.find(entry.at("label"));need(found!=required.end(),"evaluation CSV target is absent from the trained label map");translation.at(entry.at("class").get<std::uint32_t>())=found->second;}
-  for(std::size_t at=0;at<dense.labels.size();at+=4){std::uint32_t id;std::memcpy(&id,dense.labels.data()+at,4);id=translation.at(id);std::memcpy(dense.labels.data()+at,&id,4);}dense.classes=classes;dense.label_mapping=mapping;
+  // Preserve original tokens when a categorical training label such as "1"
+  // looks numeric in a later CSV subset containing only that label.
+  auto table=decision_programs_csv::read(original);std::size_t column=table.records.front().size();
+  auto named=std::find(table.records.front().begin(),table.records.front().end(),target);
+  if(named!=table.records.front().end())column=std::size_t(named-table.records.front().begin());
+  else if(target=="last")column=table.records.front().size()-1;
+  else{auto result=std::from_chars(target.data(),target.data()+target.size(),column);need(result.ec==std::errc{}&&result.ptr==target.data()+target.size(),"invalid CSV target column for trained label map");}
+  need(column<table.records.front().size(),"CSV target column is out of range");dense.labels.clear();
+  for(std::size_t row=dense.header?1:0;row<table.records.size();++row){auto found=required.find(decision_programs_csv::trim(table.records[row][column]));need(found!=required.end(),"CSV target is absent from the trained label map");auto id=found->second;dense.labels.append(reinterpret_cast<const char*>(&id),4);}
+  dense.classes=classes;dense.label_mapping=mapping;
 }
 J dataset(const Options&o,bool fit_only,Inputs&input){
   if(o.has("data")){
     auto path=absolute(o.get("data"));if(path.extension()!=".csv")return file_json(path.string());
-    auto original=dpnative::read_text(path);auto dense=decision_programs_csv::decode(original,o.required("target"),o.get("header","auto"));if(o.has("label-map"))remap_labels(dense,file_json(o.get("label-map")));
+    auto original=dpnative::read_text(path);auto dense=decision_programs_csv::decode(original,o.required("target"),o.get("header","auto"));if(o.has("label-map"))remap_labels(dense,file_json(o.get("label-map")),original,o.get("target"));
     if(o.has("classes")){auto declared=scalar(o.get("classes")).get<std::uint32_t>();need(declared>=dense.classes,"declared classes do not cover CSV labels");dense.classes=declared;}
     if(fit_only)need(dense.classes>=2,"classification training requires at least two declared classes");
     auto cached=retain_csv(original,dense,original+"\n"+o.get("target")+"\n"+o.get("header","auto")+"\n"+dense.label_mapping.dump());auto values=cached.values,labels=cached.labels;
@@ -146,6 +155,41 @@ J dataset(const Options&o,bool fit_only,Inputs&input){
     {"row_stride",o.has("row-stride")?scalar(o.get("row-stride")):features},{"FIT_rows",fit},{"VALID_rows",rows.get<std::uint64_t>()-fit.get<std::uint64_t>()},
     {"values_path",values.string()},{"values_sha256",pin(values)},{"labels_path",labels.string()},{"labels_sha256",pin(labels)},
     {"preprocessing",o.get("preprocessing","caller-supplied model-input FP32; no CLI preprocessing")},{"TEST_read",false}};
+}
+std::uint64_t positive_integer(const J&value,const std::string&name){
+  need(value.is_number_integer(),name+" must be a positive integer");
+  need(value.is_number_unsigned()||value.get<std::int64_t>()>0,name+" must be a positive integer");
+  auto number=value.get<std::uint64_t>();need(number>0,name+" must be a positive integer");return number;
+}
+void validate_holdout(const J&holdout,const J&development,std::uint64_t depth){
+  need(holdout.is_object(),"holdout dataset must be an object");
+  need(holdout.value("format",std::string{})=="dense-fp32-u32-holdout-labels-1"&&holdout.value("role",std::string{})=="HOLDOUT","holdout descriptor requires dense-fp32-u32-holdout-labels-1 and role HOLDOUT");
+  need(holdout.contains("training_allowed")&&holdout.at("training_allowed")==false&&holdout.contains("selection_allowed")&&holdout.at("selection_allowed")==true&&holdout.contains("TEST_read")&&holdout.at("TEST_read")==false,"holdout descriptor must forbid training and TEST access and allow confirmation selection");
+  need(!holdout.contains("FIT_rows")&&!holdout.contains("VALID_rows"),"holdout descriptor must not contain FIT_rows or VALID_rows, including zero counts");
+  need(holdout.at("features")==development.at("features")&&holdout.at("classes")==development.at("classes"),"holdout feature/class dimensions differ from development data");
+  auto rows=positive_integer(holdout.at("rows"),"holdout rows");need(depth>0&&depth<=UINT32_MAX&&depth<=rows,"holdout depth must be positive and leave every gate nonempty");
+  for(const char*key:{"values_path","labels_path"})if(holdout.contains(key)&&development.contains(key))
+    need(fs::weakly_canonical(absolute(holdout.at(key).get<std::string>()))!=fs::weakly_canonical(absolute(development.at(key).get<std::string>())),"holdout must be separate from development data paths");
+  if(holdout.at("rows")==development.at("rows")&&holdout.at("row_stride")==development.at("row_stride"))
+    need(holdout.at("values_sha256")!=development.at("values_sha256"),"holdout duplicates development feature contents");
+}
+J holdout_dataset(const Options&o,const J&development,Inputs&input){
+  auto path=absolute(o.required("holdout-data"));
+  if(o.has("data"))need(fs::weakly_canonical(path)!=fs::weakly_canonical(absolute(o.get("data"))),"holdout must use a separate source from development data");
+  if(path.extension()!=".csv")return file_json(path.string());
+  auto original=dpnative::read_text(path);auto dense=decision_programs_csv::decode(original,o.required("target"),o.get("header","auto"));J mapping=nullptr;
+  if(input.generated.contains("input-transport.json")){
+    const auto&transport=input.generated.at("input-transport.json");
+    need(dense.names==transport.at("feature_names")&&dense.header==transport.at("header"),"holdout CSV feature names/order or header differ from development CSV");
+    need(dpnative::sha256(original)!=transport.at("source_sha256").get<std::string>(),"holdout duplicates development CSV contents");mapping=transport.at("class_label_mapping");
+  }else if(o.has("label-map"))mapping=file_json(o.get("label-map"));
+  if(!mapping.is_null())remap_labels(dense,mapping,original,o.get("target"));
+  else need(dense.label_mapping.empty(),"string-label holdout CSV with non-CSV development data requires --label-map INPUT_TRANSPORT.json");
+  need(dense.features==development.at("features").get<std::uint32_t>(),"holdout feature dimensions differ from development data");
+  need(dense.classes<=development.at("classes").get<std::uint32_t>(),"holdout CSV labels are outside the development class mapping");dense.classes=development.at("classes").get<std::uint32_t>();
+  auto cached=retain_csv(original,dense,"holdout\n"+original+"\n"+o.get("target")+"\n"+o.get("header","auto")+"\n"+dense.label_mapping.dump());
+  input.json("holdout-input-transport.json",{{"format","CSV-input-transport-1"},{"source_path",path.string()},{"source_sha256",dpnative::sha256(original)},{"header",dense.header},{"feature_names",dense.names},{"target",o.get("target")},{"class_label_mapping",dense.label_mapping},{"role","HOLDOUT"},{"host_input_format_conversion",true},{"CPU_model_numerics",false}});
+  return {{"format","dense-fp32-u32-holdout-labels-1"},{"role","HOLDOUT"},{"training_allowed",false},{"selection_allowed",true},{"TEST_read",false},{"features",dense.features},{"classes",dense.classes},{"rows",dense.rows},{"row_stride",dense.features},{"values_path",cached.values.string()},{"values_sha256",pin(cached.values)},{"labels_path",cached.labels.string()},{"labels_sha256",pin(cached.labels)},{"preprocessing","CSV-to-FP32/u32 input transport with development class mapping; source="+path.string()+"; source_sha256="+dpnative::sha256(original)+"; target="+o.get("target")}};
 }
 J hyperparameters(const Options&o){
   J hp={{"rounds",number(o,"rounds",1)},{"max_depth",number(o,"depth",2)}};
@@ -261,6 +305,13 @@ Prepare these with hpo --checkpoint, then use hpo --training-checkpoint to selec
 the matching round-prefix baseline. See docs/CLI.md for the complete workflow.
 Teacher/meta entries are hyperparameter objects. --stop-after-oof requires an output
 checkpoint. OOF composition and VALID selection do not imply improved TEST accuracy.
+Optional: --nested-holdout --holdout-data FRESH.csv [--holdout-depth N].
+--holdout-data or --holdout-depth also enables confirmation; depth defaults to 1.
+Depth must be positive. Holdout CSV uses the development target/header and class
+mapping, with identical feature names/order. A HOLDOUT descriptor is also accepted.
+The frozen VALID winner must make strictly fewer errors than the required baseline
+at every disjoint holdout gate; a tie or loss stops confirmation with the baseline.
+This is nested holdout confirmation, not nested CV or a final TEST evaluation.
 )";
   }
   else if(command=="evaluate")std::cout<<R"(--plan PLAN.json --out NEW_DIRECTORY
@@ -351,7 +402,10 @@ int dispatch(const std::string&cmd,const Options&o){
     auto path=input.json("plan.json",plan);Args command={target.string(),o.has("check")?"--check-plan":"fit",path.string(),pin(path)};if(!o.has("check"))command.push_back(absolute(o.required("out")).string());return launch(command,o,input);
   }
   if(cmd=="study"||cmd=="hpo"||cmd=="combine"){
-    o.allow(allowed({"library","out","plan","train-data","trial","checkpoint","training-checkpoint","resume","stop-after-oof","teachers","meta","baseline","folds","oof-gpu-byte-budget"},true,true));
+    o.allow(allowed({"library","out","plan","train-data","trial","checkpoint","training-checkpoint","resume","stop-after-oof","teachers","meta","baseline","folds","oof-gpu-byte-budget","nested-holdout","holdout-depth","holdout-data"},true,true));
+    bool holdout_requested=o.has("nested-holdout")||o.has("holdout-depth")||o.has("holdout-data");
+    need(!holdout_requested||cmd=="combine","nested holdout options are supported only by combine");
+    if(holdout_requested){o.required("holdout-data");if(o.has("nested-holdout"))need(o.get("nested-holdout")=="true","--nested-holdout is an enabling switch");}
     auto data=dataset(o,false,input);J plan=o.has("plan")?file_json(o.get("plan")):J{{"TEST_read",false},{"VALID_read",false},{"hyperparameters",hyperparameters(o)}};
     bind_library(plan,o);
     if(!o.has("plan")){
@@ -373,7 +427,19 @@ int dispatch(const std::string&cmd,const Options&o){
         need(seen.insert(root.string()).second,"duplicate --training-checkpoint directory");plan["training_source_checkpoints"].push_back(root.string());
       }
     }
+    if(holdout_requested){auto depth=o.has("holdout-depth")?positive_integer(scalar(o.get("holdout-depth")),"--holdout-depth"):1;plan["nested_holdout"]={{"depth",depth},{"dataset",holdout_dataset(o,data,input)},{"acceptance_rule","strictly_fewer_errors_at_every_level"}};}
     if(o.has("checkpoint"))plan["experiment_checkpoint_path"]=absolute(o.get("checkpoint")).string();overrides(plan,o);
+    if(plan.contains("nested_holdout")){
+      need(cmd=="combine","nested holdout is supported only by combine");const auto&nested=plan.at("nested_holdout");need(nested.is_object(),"nested_holdout must be an object");
+      need(nested.value("acceptance_rule",std::string{})=="strictly_fewer_errors_at_every_level","nested holdout requires strictly_fewer_errors_at_every_level");
+      auto depth=positive_integer(nested.at("depth"),"holdout depth");const auto&heldout=nested.at("dataset");validate_holdout(heldout,data,depth);
+      if(nested.contains("partition_rows")){
+        const auto&parts=nested.at("partition_rows");need(parts.is_array()&&parts.size()==depth,"holdout partition_rows must contain one count per depth level");
+        auto remaining=positive_integer(heldout.at("rows"),"holdout rows");
+        for(const auto&part:parts){auto rows=positive_integer(part,"holdout partition_rows count");need(rows<=remaining,"holdout partition_rows exceed total rows");remaining-=rows;}
+        need(remaining==0,"holdout partition_rows must sum to holdout rows");
+      }
+    }
     if(cmd=="combine"&&!o.has("plan")&&!o.has("resume")&&!plan.contains("experiment_resume_from")&&!plan.value("response_reuse_completed_oof",false))
       need(plan.contains("training_source_checkpoints")&&plan.at("training_source_checkpoints").is_array()&&!plan.at("training_source_checkpoints").empty(),
            "combine requires --training-checkpoint COMPLETE_HPO_CHECKPOINT; prepare teachers with hpo --checkpoint and select a matching prefix baseline with hpo --training-checkpoint (see docs/CLI.md)");

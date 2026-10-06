@@ -5,6 +5,8 @@
 #include "class_study_process.hpp"
 #include "class_study_training_cache.hpp"
 #include "class_study_composition.hpp"
+#include "class_study_holdout.hpp"
+#include "class_study_nested_holdout.hpp"
 #include "class_io.hpp"
 #include <algorithm>
 #include <chrono>
@@ -149,6 +151,7 @@ inline RetainedComposition retained_composition(const J& plan,const J& descripto
        bundle.at("classes")==descriptor.at("classes")&&bundle.at("native_library_path")==plan.at("native_library_path")&&
        bundle.at("native_library_sha256")==plan.at("native_library_sha256"),"nonlinear baseline dataset/library differs");
   const auto receipt=J::parse(out.result_bytes);const auto& prior=receipt.at("identity");const auto& source_plan=prior.at("plan");
+  nested_holdout::reject_spent_donor(plan,receipt);
   need(receipt.at("format")=="native-nonlinear-combination-result-1"&&receipt.at("complete")==true&&
        receipt.at("TEST_read")==false&&receipt.at("VALID_used_for_selection")==true&&prior.at("dataset")==descriptor&&
        source_plan.at("workflow")=="native-nonlinear-combination-1"&&source_plan.at("TEST_read")==false&&
@@ -248,6 +251,7 @@ inline void response_routes(const J& plan){
 // Existing resume validation below checks every adopted model and score again.
 inline J completed_oof_fork(const J& plan,const J& descriptor,const J& identity,
                             J source,const std::string& generation){
+  nested_holdout::reject_spent_donor(plan,source);
   const auto& prior_identity=source.at("identity");
   const auto& prior_plan=prior_identity.at("plan");
   const auto prior_phase=source.at("phase").get<std::string>();
@@ -338,6 +342,7 @@ inline J completed_oof_fork(const J& plan,const J& descriptor,const J& identity,
        "nonlinear completed OOF fork would omit a winning source meta; retain that winner separately first");
   scores.erase(scores.begin()+std::ptrdiff_t(adopted_count),scores.end());
   source["identity"]=identity;source["phase"]="oof";source["current"]=nullptr;
+  source.erase("nested_holdout"); // New outer data starts after the new inner search.
   source["meta_models"]=J::array();source["meta_index"]=0;source["meta_fits"]=0;source["best"]=prefix_best;
   source["response_reuse"]={{"mode","completed_oof_same_bank_fork"},
     {"checkpoint",plan.at("response_source_checkpoint")},{"generation",generation},
@@ -353,6 +358,7 @@ inline J completed_oof_fork(const J& plan,const J& descriptor,const J& identity,
 }
 inline J response_import_provenance(const J& plan,const J& descriptor,const J& donor,
                                     const std::string& generation){
+  nested_holdout::reject_spent_donor(plan,donor);
   response_routes(plan);need(plan.contains("response_import_checkpoint"),"nonlinear import checkpoint undeclared");
   need(donor.at("phase")=="complete"&&donor.at("current").is_null(),
        "response import requires a complete nonlinear study checkpoint");
@@ -379,6 +385,12 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
   need(plan.at("TEST_read")==false&&plan.at("VALID_read")==false&&descriptor.at("TEST_read")==false,
        "nonlinear training must exclude VALID and TEST");
   if(plan.contains("dataset_source"))need(plan.at("dataset_source")==descriptor,"nonlinear declared dataset differs");
+  const bool nested=plan.contains("nested_holdout");
+  J holdout_config=nullptr,holdout_state=nullptr;
+  if(nested){
+    holdout_config=nested_holdout::configuration(plan.at("nested_holdout"),descriptor);
+    (void)validate_holdout_dataset(holdout_config.at("dataset"));
+  }
   const auto class_count=number(descriptor.at("classes"),"nonlinear class count");
   need(class_count>=2&&class_count<=UINT32_MAX,"nonlinear class capacity");const auto K=std::uint32_t(class_count);
   const auto teacher_hp=parameters(plan.at("teacher_hyperparameters"),K);
@@ -439,6 +451,8 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
     meta_fits=number(s.at("meta_fits"),"nonlinear completed meta fits");source_cache=s.at("source_cache");
     saved_oof=s.at("oof_checkpoint");oof_metrics=s.at("oof_metrics");response_binding=s.at("response_binding");
     response_reuse=s.value("response_reuse",J(nullptr));
+    holdout_state=s.value("nested_holdout",J(nullptr));
+    need(holdout_state.is_null()||(nested&&phase=="complete"),"saved holdout decision precedes completed inner search");
     need(teachers.size()==teacher_hp.size()&&teacher_scored<=teachers.size()&&meta_index<=meta_hp.size()&&meta_models.size()==meta_index,"nonlinear saved model/cursor extent");
     need(results.is_array()&&results.size()==baseline_scored+teacher_scored+meta_index&&(results.empty()?best==0:best<results.size()),"nonlinear saved scoring extent");
     need((phase=="meta_scoring")==bool(current)&&meta_fits==meta_index+bool(current),"nonlinear pending FIT extent");
@@ -508,6 +522,7 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
       {"oof_metrics",oof?oof->metrics():oof_metrics},{"response_binding",response_binding},{"response_reuse",response_reuse},
       {"periodic_checkpoint_writes",false},{"mid_native_round_resume",false}};
     if(has_baseline){saved["baseline_composition"]=baseline->saved;saved["baseline_scored"]=baseline_scored;}
+    if(nested)saved["nested_holdout"]=holdout_state;
     return saved;
   };
   auto boundary=[&](bool final=false){
@@ -521,6 +536,7 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
     J event={{"event","nonlinear_search_boundary"},{"phase",phase},{"teachers_scored",teacher_scored},{"meta_candidates_scored",meta_index},
       {"meta_FIT_calls",meta_fits},{"OOF",progress},{"stop_requested",stop_requested}};
     if(completed_oof_stop)event["stop_reason"]="completed_OOF_before_first_meta_FIT";
+    if(!holdout_state.is_null())event["nested_holdout"]={{"status",holdout_state.at("status")},{"next_gate",holdout_state.at("next_gate")}};
     std::cout<<event.dump()<<'\n'<<std::flush;
     return stop_requested;
   };
@@ -607,6 +623,7 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
       // library, fold rule, response byte pins and CUDA coverage before use.
       const auto source=plan.at("response_source_checkpoint").get<std::string>();
       auto loaded=cp::Coordinator::load(source,budget,format);const auto& s=loaded.state;
+      nested_holdout::reject_spent_donor(plan,s);
       need(loaded.engine_snapshot_path.empty()&&s.at("phase")=="complete"&&s.at("current").is_null(),
            "response reuse requires a complete nonlinear study checkpoint");
       const auto& source_identity=s.at("identity");const auto& source_plan=source_identity.at("plan");
@@ -677,31 +694,69 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
     }
     oof_metrics=oof->metrics();
   }else count_teacher_bytes();
-  if(boundary(true))return 2;
-  need(!results.empty()&&best<results.size(),"nonlinear selected candidate missing");const auto& selected=results.at(best);
-  const auto selected_index=selected.at("index").get<std::size_t>();
-  const bool retained=selected.at("kind")=="retained_composition";
-  const bool combined=retained?baseline->declaration.at("selected_kind")=="nonlinear_combination"
-                              :selected.at("kind")=="nonlinear_combination";
-  if(has_baseline)need(number(selected.at("evaluation").at("VALID_errors"),"nonlinear selected errors")<=
+  need(!results.empty()&&best<results.size(),"nonlinear selected candidate missing");
+  if(has_baseline)need(number(results.at(best).at("evaluation").at("VALID_errors"),"nonlinear selected errors")<=
       number(baseline->saved.at("prior_VALID_errors"),"nonlinear baseline errors"),"nonlinear required baseline regressed");
-  J deployment;
-  if(retained){
-    // Preserve the originally supported bundle and its independent model closure.
-    // The current response bank does not alter the retained composition recipe.
-    deployment=J::from_cbor(baseline->bundle_bytes);
-  }else{
-    deployment={{"format","native-nonlinear-deployment-bundle-1"},{"selected_kind",selected.at("kind")},
+  auto deployment_for=[&](const J& candidate){
+    const auto index=candidate.at("index").get<std::size_t>();
+    if(candidate.at("kind")=="retained_composition")return J::from_cbor(baseline->bundle_bytes);
+    J deployment={{"format","native-nonlinear-deployment-bundle-1"},{"selected_kind",candidate.at("kind")},
       {"raw_features",descriptor.at("features")},{"classes",K},{"native_library_path",plan.at("native_library_path")},
       {"native_library_sha256",plan.at("native_library_sha256")},{"raw_dataset_contract",descriptor},
       {"teacher_probability_contract","native full-round gbtree clone; derived multi:softprob; FP32 teacher-major/class-minor; no CPU transform"},
       {"final_class_contract","selected native multi:softmax public class"},{"teacher_models",J::object()},{"teacher_order",J::array()},
       {"compiled_single_tree",false},{"deployment_replay_qualified",false}};
-    if(combined){for(std::size_t i=0;i<meta_counts.at(selected_index);++i){const auto& n=teachers[i].full_fit_model;deployment["teacher_order"].push_back(n.model_sha256);
-      if(!deployment["teacher_models"].contains(n.model_sha256))deployment["teacher_models"][n.model_sha256]={{"model",cp::binary(n.model_json)},{"sha256",n.model_sha256}};}
-      const auto& m=meta_models.at(selected_index);deployment["meta_model"]={{"model",cp::binary(m.model_json)},{"sha256",m.model_sha256}};}
-    else deployment["native_model"]=pack(teachers.at(selected_index).full_fit_model);
+    if(candidate.at("kind")=="nonlinear_combination"){
+      for(std::size_t i=0;i<meta_counts.at(index);++i){const auto& n=teachers[i].full_fit_model;
+        deployment["teacher_order"].push_back(n.model_sha256);
+        if(!deployment["teacher_models"].contains(n.model_sha256))deployment["teacher_models"][n.model_sha256]={{"model",cp::binary(n.model_json)},{"sha256",n.model_sha256}};
+      }
+      const auto& m=meta_models.at(index);deployment["meta_model"]={{"model",cp::binary(m.model_json)},{"sha256",m.model_sha256}};
+    }else deployment["native_model"]=pack(teachers.at(index).full_fit_model);
+    return deployment;
+  };
+  std::size_t final_best=best,holdout_gates_this_process=0;
+  if(nested){
+    // The comparator is declared before search, not picked using outer labels.
+    std::size_t comparator=results.size();
+    for(std::size_t i=0;i<results.size();++i)
+      if(results.at(i).at("kind")=="native_teacher"&&results.at(i).at("model_sha256")==required_baseline){comparator=i;break;}
+    need(comparator<results.size(),"nested holdout required baseline result missing");
+    if(holdout_state.is_null())holdout_state=nested_holdout::frozen(holdout_config,best,results.at(best),comparator,results.at(comparator));
+    else nested_holdout::validate_state(holdout_state,holdout_config,best,results.at(best),comparator,results.at(comparator));
+    if(boundary())return 2;
+    if(holdout_state.at("status")=="pending"){
+      // Development owners have left scope. Stage independent outer rows once.
+      auto heldout=stage_holdout_dataset(holdout_config.at("dataset"));
+      ResidentComposition candidate_replay(deployment_for(results.at(best)));
+      ResidentComposition baseline_replay(deployment_for(results.at(comparator)));
+      auto replay_oracle=[&](ResidentComposition& replay,const J& result){
+        NativeOracle source;source.features=replay.features();source.classes=replay.classes();source.objective="multi:softmax";
+        source.library_sha256=plan.at("native_library_sha256").get<std::string>();
+        source.source_sha256=result.at("model_sha256").get<std::string>();
+        source.predict=[&replay](const float* x,std::uint64_t rows,bool margin){return replay.predict(x,rows,margin);};
+        return source;
+      };
+      const auto challenger=replay_oracle(candidate_replay,results.at(best));
+      const auto incumbent=replay_oracle(baseline_replay,results.at(comparator));
+      while(holdout_state.at("status")=="pending"){
+        if(boundary())return 2;
+        const auto gate=holdout_state.at("next_gate").get<std::size_t>();
+        const auto& part=holdout_config.at("partitions").at(gate);
+        const auto score=evaluate_holdout_gate(heldout,part.at("offset").get<std::uint64_t>(),part.at("rows").get<std::uint64_t>(),challenger,incumbent);
+        nested_holdout::record(holdout_state,score);++holdout_gates_this_process;
+        std::cout<<J{{"event","nested_holdout_gate"},{"level",gate+1},{"score",score},{"status",holdout_state.at("status")}}.dump()<<'\n'<<std::flush;
+      }
+    }
+    final_best=holdout_state.at("final_selected_index").get<std::size_t>();
   }
+  if(boundary(true))return 2;
+  const auto& selected=results.at(final_best);
+  const auto selected_index=selected.at("index").get<std::size_t>();
+  const bool retained=selected.at("kind")=="retained_composition";
+  const bool combined=retained?baseline->declaration.at("selected_kind")=="nonlinear_combination"
+                              :selected.at("kind")=="nonlinear_combination";
+  const auto deployment=deployment_for(selected);
   std::filesystem::create_directories(output);
   if(retained)write(output/"selected-bundle.cbor",baseline->bundle_bytes);
   else{std::ofstream f(output/"selected-bundle.cbor",std::ios::binary);f.exceptions(std::ios::badbit|std::ios::failbit);
@@ -720,6 +775,13 @@ inline int run(const J& plan,const J& descriptor,const std::filesystem::path& ou
     {"selected_bundle_bytes",std::filesystem::file_size(output/"selected-bundle.cbor")},
     {"deployment_model_byte_metric","native JSON model buffers including required full-FIT teachers; excludes envelope/runtime library; not compiled tree size"},
     {"process_wall_seconds",std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()}};
+  if(nested){
+    report["inner_selected"]=results.at(best);report["nested_holdout"]=holdout_state;
+    report["holdout_gates_computed_this_process"]=holdout_gates_this_process;
+    report["selection_rule"]="inner VALID errors/bytes/order, then frozen candidate must strictly improve on the required baseline at every outer holdout gate";
+    report["holdout_score_scope"]="selection evidence, not an independent final TEST estimate";
+    report["holdout_independence_scope"]="caller supplies fresh group/time-separated data; distinct files do not establish global independence";
+  }
   if(!response_reuse.is_null()&&response_reuse.value("mode",std::string{})=="completed_oof_same_bank_fork"){
     report["selection_scope"]="baseline/teacher incumbent is exact replay of prior CUDA scores, revalidated on host; newly declared meta candidates use CUDA scoring and preference";
     report["baseline_teacher_scores_computed_this_process"]=false;
