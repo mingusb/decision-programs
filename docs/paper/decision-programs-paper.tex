@@ -1,0 +1,1339 @@
+% !TeX program = lualatex
+% Named-author research manuscript prepared for ICML 2027.
+% Existing official ICML 2026 layout retained provisionally, without a
+% preprint banner, acceptance claim, or proceedings publication notice.
+% Embedded style and bibliography make the editable source self-contained.
+\begin{filecontents*}[overwrite]{icml2026.sty}
+% File: icml2026.sty (LaTeX style file for ICML-2026, version of 2025-10-29)
+
+% This file contains the LaTeX formatting parameters for a two-column
+% conference proceedings that is 8.5 inches wide by 11 inches high.
+%
+% Modified by Hanze Dong, Alberto Bietti, and Felix Berkenkamp, 2025
+% - Revert to times for better compatibility
+% - Updated years, volume, location
+% - Added preprint version
+% - Based on the suggestion from Johan Larsson:
+%   1. Added an end-of-document safety check to ensure the affiliations or notice footnote is printed:
+%      (1) Introduces a flag \newif\ificml@noticeprinted and sets it false by default.
+%      (2) At end of document, emits a package warning if \printAffiliationsAndNotice{...} was never called.
+%   2. \printAffiliationsAndNotice now sets the flag when called: Begins with \global\icml@noticeprintedtrue.
+% - Migrated to more recent version of fancyhdr for running title in header
+%
+% Modified by Johan Larsson, 2025
+% - Use newtx instead of times, aligning serif, sans-serif, typerwriter,
+%   and math fonts.
+% - Use caption package to setup captions instead of manually defining themanually defining them.
+% - Formatted icml2026.sty and example_paper.tex
+% - Use title case for section title to 2.9
+% - Replace subfigure package with subcaption in example, since it is
+%   designed to work together with the caption package (which is now required).
+% - Remove unused label in example
+%
+% Modified by Tegan Maharaj and Felix Berkenkamp 2025: changed years, volume, location
+%
+% Modified by Jonathan Scarlett 2024: changed years, volume, location
+%
+% Modified by Sivan Sabato 2023: changed years and volume number.
+% Modified by Jonathan Scarlett 2023: added page numbers to every page
+%
+% Modified by Csaba Szepesvari 2022: changed years, PMLR ref. Turned off checking marginparwidth
+%     as marginparwidth only controls the space available for margin notes and margin notes
+%     will NEVER be used anyways in submitted versions, so there is no reason one should
+%     check whether marginparwidth has been tampered with.
+%     Also removed pdfview=FitH from hypersetup as it did not do its job; the default choice is a bit better
+%     but of course the double-column format is not supported by this hyperlink preview functionality
+%     in a completely satisfactory fashion.
+% Modified by Gang Niu 2022: Changed color to xcolor
+%
+% Modified by Iain Murray 2018: changed years, location. Remove affiliation notes when anonymous.
+%     Move times dependency from .tex to .sty so fewer people delete it.
+%
+% Modified by Daniel Roy 2017: changed byline to use footnotes for affiliations, and removed emails
+%
+% Modified by Percy Liang 12/2/2013: changed the year, location from the previous template for ICML 2014
+
+% Modified by Fei Sha 9/2/2013: changed the year, location form the previous template for ICML 2013
+%
+% Modified by Fei Sha 4/24/2013: (1) remove the extra whitespace after the
+%     first author's email address (in %the camera-ready version) (2) change the
+%     Proceeding ... of ICML 2010 to 2014 so PDF's metadata will show up %
+%     correctly
+%
+% Modified by Sanjoy Dasgupta, 2013: changed years, location
+%
+% Modified by Francesco Figari, 2012: changed years, location
+%
+% Modified by Christoph Sawade and Tobias Scheffer, 2011: added line
+% numbers, changed years
+%
+% Modified by Hal Daume III, 2010: changed years, added hyperlinks
+%
+% Modified by Kiri Wagstaff, 2009: changed years
+%
+% Modified by Sam Roweis, 2008: changed years
+%
+% Modified by Ricardo Silva, 2007: update of the ifpdf verification
+%
+% Modified by Prasad Tadepalli and Andrew Moore, merely changing years.
+%
+% Modified by Kristian Kersting, 2005, based on Jennifer Dy's 2004 version
+% - running title. If the original title is to long or is breaking a line,
+%   use \icmltitlerunning{...} in the preamble to supply a shorter form.
+%   Added fancyhdr package to get a running head.
+% - Updated to store the page size because pdflatex does compile the
+%   page size into the pdf.
+%
+% Hacked by Terran Lane, 2003:
+% - Updated to use LaTeX2e style file conventions (ProvidesPackage,
+%   etc.)
+% - Added an ``appearing in'' block at the base of the first column
+%   (thus keeping the ``appearing in'' note out of the bottom margin
+%   where the printer should strip in the page numbers).
+% - Added a package option [accepted] that selects between the ``Under
+%   review'' notice (default, when no option is specified) and the
+%   ``Appearing in'' notice (for use when the paper has been accepted
+%   and will appear).
+%
+%   Originally created as:  ml2k.sty (LaTeX style file for ICML-2000)
+%   by P. Langley (12/23/99)
+
+%%%%%%%%%%%%%%%%%%%%
+%% This version of the style file supports both a ``review'' version
+%% and a ``final/accepted'' version.  The difference is only in the
+%% text that appears in the note at the bottom of the first column of
+%% the first page.  The default behavior is to print a note to the
+%% effect that the paper is under review and don't distribute it.  The
+%% final/accepted version prints an ``Appearing in'' note.  To get the
+%% latter behavior, in the calling file change the ``usepackage'' line
+%% from:
+%% \usepackage{icml2025}
+%% to
+%% \usepackage[accepted]{icml2025}
+%%%%%%%%%%%%%%%%%%%%
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{icml2026}[2025/10/29 v2.0 ICML Conference Style File]
+
+% Before 2018, \usepackage{times} was in the example TeX, but inevitably
+% not everybody did it.
+% \RequirePackage[amsthm]{newtx}
+% 2025.11.6 revert to times for better compatibility
+\RequirePackage{times}
+
+% Use fancyhdr package
+\RequirePackage{fancyhdr}
+\RequirePackage{xcolor} % changed from color to xcolor (2021/11/24)
+\RequirePackage{algorithm}
+\RequirePackage{algorithmic}
+\RequirePackage{natbib}
+\RequirePackage{eso-pic} % used by \AddToShipoutPicture
+\RequirePackage{forloop}
+\RequirePackage{url}
+\RequirePackage{caption}
+
+%%%%%%%% Options
+\DeclareOption{accepted}{%
+  \renewcommand{\Notice@String}{\ICML@appearing}
+  \gdef\isaccepted{1}
+}
+
+% === Preprint option ===
+\DeclareOption{preprint}{%%
+  \renewcommand{\Notice@String}{\ICML@preprint}%%
+  \gdef\ispreprint{1}%%
+}
+
+% Distinct preprint footer text
+\newcommand{\ICML@preprint}{%
+  \textit{Preprint. \today.}%
+}
+
+\DeclareOption{nohyperref}{%
+  \gdef\nohyperref{1}
+}
+
+% Helper flag: show real authors for accepted or preprint
+\newif\ificmlshowauthors
+\icmlshowauthorsfalse
+
+%%%%%%%%%%%%%%%%%%%%
+% This string is printed at the bottom of the page for the
+% final/accepted version of the ``appearing in'' note.  Modify it to
+% change that text.
+%%%%%%%%%%%%%%%%%%%%
+\newcommand{\ICML@appearing}{\textit{Proceedings of the
+$\mathit{43}^{rd}$ International Conference on Machine Learning},
+Seoul, South Korea. PMLR 306, 2026.
+Copyright 2026 by the author(s).}
+
+%%%%%%%%%%%%%%%%%%%%
+% This string is printed at the bottom of the page for the draft/under
+% review version of the ``appearing in'' note.  Modify it to change
+% that text.
+%%%%%%%%%%%%%%%%%%%%
+\newcommand{\Notice@String}{Preliminary work.  Under review by the
+International Conference on Machine Learning (ICML)\@.  Do not distribute.}
+
+% Cause the declared options to actually be parsed and activated
+\ProcessOptions\relax
+
+% After options are processed, decide if authors should be visible
+\ifdefined\isaccepted \icmlshowauthorstrue \fi
+\ifdefined\ispreprint \icmlshowauthorstrue \fi
+
+\ifdefined\isaccepted\else\ifdefined\ispreprint\else\ifdefined\hypersetup
+  \hypersetup{pdfauthor={Anonymous Authors}}
+\fi\fi\fi
+
+\ifdefined\nohyperref\else\ifdefined\hypersetup
+  \definecolor{mydarkblue}{rgb}{0,0.08,0.45}
+  \hypersetup{ %
+    pdftitle={},
+    pdfsubject={Proceedings of the International Conference on Machine Learning 2026},
+    pdfkeywords={},
+    pdfborder=0 0 0,
+    pdfpagemode=UseNone,
+    colorlinks=true,
+    linkcolor=mydarkblue,
+    citecolor=mydarkblue,
+    filecolor=mydarkblue,
+    urlcolor=mydarkblue,
+    }
+  \fi
+\fi
+
+
+
+% Uncomment the following for debugging.  It will cause LaTeX to dump
+% the version of the ``appearing in'' string that will actually appear
+% in the document.
+%\typeout{>> Notice string='\Notice@String'}
+
+% Change citation commands to be more like old ICML styles
+\newcommand{\yrcite}[1]{\citeyearpar{#1}}
+\renewcommand{\cite}[1]{\citep{#1}}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% to ensure the letter format is used. pdflatex does compile the
+% page size into the pdf. This is done using \pdfpagewidth and
+% \pdfpageheight. As Latex does not know this directives, we first
+% check whether pdflatex or latex is used.
+%
+% Kristian Kersting 2005
+%
+% in order to account for the more recent use of pdfetex as the default
+% compiler, I have changed the pdf verification.
+%
+% Ricardo Silva 2007
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\paperwidth=8.5in
+\paperheight=11in
+
+% old PDFLaTex verification, circa 2005
+%
+%\newif\ifpdf\ifx\pdfoutput\undefined
+%  \pdffalse % we are not running PDFLaTeX
+%\else
+%  \pdfoutput=1 % we are running PDFLaTeX
+%  \pdftrue
+%\fi
+
+\newif\ifpdf %adapted from ifpdf.sty
+\ifx\pdfoutput\undefined
+\else
+   \ifx\pdfoutput\relax
+   \else
+     \ifcase\pdfoutput
+     \else
+       \pdftrue
+     \fi
+   \fi
+\fi
+
+\ifpdf
+%    \pdfpagewidth=\paperwidth
+%    \pdfpageheight=\paperheight
+  \setlength{\pdfpagewidth}{8.5in}
+  \setlength{\pdfpageheight}{11in}
+\fi
+
+% Physical page layout
+
+\evensidemargin -0.23in
+\oddsidemargin -0.23in
+\setlength\textheight{9.0in}
+\setlength\textwidth{6.75in}
+\setlength\columnsep{0.25in}
+\setlength\headheight{10pt}
+\setlength\headsep{10pt}
+\addtolength{\topmargin}{-20pt}
+\addtolength{\topmargin}{-0.29in}
+
+% Historically many authors tried to include packages like geometry or fullpage,
+% which change the page layout. It either makes the proceedings inconsistent, or
+% wastes organizers' time chasing authors. So let's nip these problems in the
+% bud here. -- Iain Murray 2018.
+%\RequirePackage{printlen}
+\AtBeginDocument{%
+\newif\ifmarginsmessedwith
+\marginsmessedwithfalse
+\ifdim\oddsidemargin=-16.62178pt     \else oddsidemargin has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\headheight=10.0pt             \else headheight has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\textheight=650.43pt           \else textheight has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\marginparsep=11.0pt           \else marginparsep has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\footskip=25.0pt               \else footskip has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\hoffset=0.0pt                 \else hoffset has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\paperwidth=614.295pt          \else paperwidth has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\topmargin=-24.95781pt         \else topmargin has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\headsep=10.0pt                \else headsep has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\textwidth=487.8225pt          \else textwidth has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\marginparpush=5.0pt           \else marginparpush has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\voffset=0.0pt                 \else voffset has been altered.\\ \marginsmessedwithtrue\fi
+\ifdim\paperheight=794.96999pt       \else paperheight has been altered.\\ \marginsmessedwithtrue\fi
+\ifmarginsmessedwith
+
+\textbf{\large \em The page layout violates the ICML style.}
+
+Please do not change the page layout, or include packages like geometry,
+savetrees, or fullpage, which change it for you.
+
+We're not able to reliably undo arbitrary changes to the style. Please remove
+the offending package(s), or layout-changing commands and try again.
+
+\fi}
+
+
+%% The following is adapted from code in the acmconf.sty conference
+%% style file.  The constants in it are somewhat magical, and appear
+%% to work well with the two-column format on US letter paper that
+%% ICML uses, but will break if you change that layout, or if you use
+%% a longer block of text for the copyright notice string.  Fiddle with
+%% them if necessary to get the block to fit/look right.
+%%
+%% -- Terran Lane, 2003
+%%
+%% The following comments are included verbatim from acmconf.sty:
+%%
+%%% This section (written by KBT) handles the 1" box in the lower left
+%%% corner of the left column of the first page by creating a picture,
+%%% and inserting the predefined string at the bottom (with a negative
+%%% displacement to offset the space allocated for a non-existent
+%%% caption).
+%%%
+\def\ftype@copyrightbox{8}
+\def\@copyrightspace{
+\@float{copyrightbox}[b]
+\begin{center}
+\setlength{\unitlength}{1pc}
+\begin{picture}(20,1.5)
+\put(0,2.5){\line(1,0){4.818}}
+\put(0,0){\parbox[b]{19.75pc}{\small \Notice@String}}
+\end{picture}
+\end{center}
+\end@float}
+
+\setlength\footskip{25.0pt}
+\flushbottom \twocolumn
+\sloppy
+
+% Clear out the addcontentsline command
+\def\addcontentsline#1#2#3{}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% commands for formatting paper title, author names, and addresses.
+
+% box to check the size of the running head
+\newbox\titrun
+
+% general page style
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+% set the width of the head rule to 1 point
+\renewcommand{\headrulewidth}{1pt}
+
+% definition to set the head as running head in the preamble
+\def\icmltitlerunning#1{\gdef\@icmltitlerunning{#1}}
+
+% main definition adapting \icmltitle from 2004
+\long\def\icmltitle#1{%
+
+   %check whether @icmltitlerunning exists
+   % if not \icmltitle is used as running head
+   \ifx\undefined\@icmltitlerunning%
+      \gdef\@icmltitlerunning{#1}
+   \fi
+
+   %add it to pdf information
+  \ifdefined\nohyperref\else\ifdefined\hypersetup
+     \hypersetup{pdftitle={#1}}
+   \fi\fi
+
+   %get the dimension of the running title
+   \global\setbox\titrun=\vbox{\small\bf\@icmltitlerunning}
+
+   % error flag
+   \gdef\@runningtitleerror{0}
+
+    % running title too long
+    \ifdim\wd\titrun>\textwidth%
+      \gdef\@runningtitleerror{1}%
+      % running title breaks a line
+    \else \ifdim\ht\titrun>6.25pt
+    \gdef\@runningtitleerror{2}%
+      \fi
+    \fi
+
+       % if there is somthing wrong with the running title
+    \ifnum\@runningtitleerror>0
+      \typeout{}%
+                 \typeout{}%
+                 \typeout{*******************************************************}%
+                 \typeout{Title exceeds size limitations for running head.}%
+                 \typeout{Please supply a shorter form for the running head}
+                 \typeout{with \string\icmltitlerunning{...}\space prior to \string\begin{document}}%
+      \typeout{*******************************************************}%
+      \typeout{}%
+      \typeout{}%
+      % set default running title
+      \gdef\@icmltitlerunning{Title Suppressed Due to Excessive Size}
+    \fi
+
+    % no running title on the first page of the paper
+    \thispagestyle{plain}
+
+    {\center\baselineskip 18pt
+      \toptitlebar{\Large\bf #1}\bottomtitlebar}
+}
+
+% set running title header
+\fancyhead[C]{\small\bf\@icmltitlerunning}
+
+\gdef\icmlfullauthorlist{}
+\newcommand\addstringtofullauthorlist{\g@addto@macro\icmlfullauthorlist}
+\newcommand\addtofullauthorlist[1]{%
+  \ifdefined\icmlanyauthors%
+    \addstringtofullauthorlist{, #1}%
+  \else%
+    \addstringtofullauthorlist{#1}%
+    \gdef\icmlanyauthors{1}%
+  \fi%
+  \ifdefined\hypersetup%
+    \hypersetup{pdfauthor=\icmlfullauthorlist}%
+  \fi
+}
+
+\def\toptitlebar{\hrule height1pt \vskip .25in}
+\def\bottomtitlebar{\vskip .22in \hrule height1pt \vskip .3in}
+
+\newenvironment{icmlauthorlist}{%
+  \setlength\topsep{0pt}
+  \setlength\parskip{0pt}
+  \begin{center}
+    }{%
+  \end{center}
+}
+
+\newcounter{@affiliationcounter}
+\newcommand{\@pa}[1]{%
+  \ifcsname the@affil#1\endcsname
+    % do nothing
+  \else
+    \ifcsname @icmlsymbol#1\endcsname
+      % nothing
+    \else
+      \stepcounter{@affiliationcounter}%
+      \newcounter{@affil#1}%
+      \setcounter{@affil#1}{\value{@affiliationcounter}}%
+    \fi
+  \fi%
+  \ifcsname @icmlsymbol#1\endcsname
+    \textsuperscript{\csname @icmlsymbol#1\endcsname\,}%
+  \else
+    \textsuperscript{\arabic{@affil#1}\,}%
+  \fi
+}
+
+\newcommand{\icmlauthor}[2]{%
+  \ificmlshowauthors
+    \mbox{\bf #1}\,\@for\theaffil:=#2\do{\@pa{\theaffil}} \addtofullauthorlist{#1}%
+  \else
+    \ifdefined\@icmlfirsttime\else
+      \gdef\@icmlfirsttime{1}
+      \mbox{\bf Anonymous Authors}\@pa{@anon} \addtofullauthorlist{Anonymous Authors}
+    \fi
+  \fi
+}
+
+\newcommand{\icmlsetsymbol}[2]{%
+  \expandafter\gdef\csname @icmlsymbol#1\endcsname{#2}
+}
+
+\newcommand{\icmlaffiliation}[2]{%
+  \ificmlshowauthors
+    \ifcsname the@affil#1\endcsname
+      \expandafter\gdef\csname @affilname\csname the@affil#1\endcsname\endcsname{#2}%
+    \else
+      {\bf AUTHORERR: Error in use of \textbackslash{}icmlaffiliation command. Label ``#1'' not mentioned in some \textbackslash{}icmlauthor\{author name\}\{labels here\} command beforehand. }
+      \typeout{}%
+      \typeout{}%
+      \typeout{*******************************************************}%
+      \typeout{Affiliation label undefined. }%
+      \typeout{Make sure \string\icmlaffiliation\space follows }%
+      \typeout{all of \string\icmlauthor\space commands}%
+      \typeout{*******************************************************}%
+      \typeout{}%
+      \typeout{}%
+    \fi
+  \else
+    \expandafter\gdef\csname @affilname1\endcsname{Anonymous Institution, Anonymous City, Anonymous Region, Anonymous Country}
+  \fi
+}
+
+\newcommand{\icmlcorrespondingauthor}[2]{%
+  \ificmlshowauthors
+    \ifdefined\icmlcorrespondingauthor@text
+      \g@addto@macro\icmlcorrespondingauthor@text{, #1 \textless{}#2\textgreater{}}
+    \else
+      \gdef\icmlcorrespondingauthor@text{#1 \textless{}#2\textgreater{}}
+    \fi
+  \else
+    \gdef\icmlcorrespondingauthor@text{Anonymous Author \textless{}anon.email@domain.com\textgreater{}}
+  \fi
+}
+
+\newcommand{\icmlEqualContribution}{\textsuperscript{*}Equal contribution }
+
+
+% --- ICML 2026: ensure authors do not omit the affiliations/notice footnote ---
+\newif\ificml@noticeprinted
+\icml@noticeprintedfalse
+\AtEndDocument{%
+  \ificml@noticeprinted\relax\else
+    \PackageWarningNoLine{icml2026}{%
+      You did not call \string\printAffiliationsAndNotice{}. If you have no notice,%
+      call \string\printAffiliationsAndNotice\string{} (empty braces).%
+    }%
+  \fi
+}
+
+
+\newcounter{@affilnum}
+\newcommand{\printAffiliationsAndNotice}[1]{\global\icml@noticeprintedtrue%
+  \stepcounter{@affiliationcounter}%
+  {\let\thefootnote\relax\footnotetext{\hspace*{-\footnotesep}\ificmlshowauthors #1\fi%
+      \forloop{@affilnum}{1}{\value{@affilnum} < \value{@affiliationcounter}}{
+        \textsuperscript{\arabic{@affilnum}}\ifcsname @affilname\the@affilnum\endcsname%
+          \csname @affilname\the@affilnum\endcsname%
+        \else
+          {\bf AUTHORERR: Missing \textbackslash{}icmlaffiliation.}
+        \fi
+      }.%
+      \ifdefined\icmlcorrespondingauthor@text
+         { }Correspondence to: \icmlcorrespondingauthor@text.
+      \else
+        {\bf AUTHORERR: Missing \textbackslash{}icmlcorrespondingauthor.}
+      \fi
+
+      \ \\
+      \Notice@String
+    }
+  }
+}
+
+\long\def\icmladdress#1{%
+  {\bf The \textbackslash{}icmladdress command is no longer used.  See the example\_paper PDF .tex for usage of \textbackslash{}icmlauther and \textbackslash{}icmlaffiliation.}
+}
+
+%% keywords as first class citizens
+\def\icmlkeywords#1{%
+  \ifdefined\nohyperref\else\ifdefined\hypersetup
+      \hypersetup{pdfkeywords={#1}}
+    \fi\fi
+}
+
+% modification to natbib citations
+\setcitestyle{authoryear,round,citesep={;},aysep={,},yysep={;}}
+
+% Redefinition of the abstract environment.
+\renewenvironment{abstract}
+{%
+  \centerline{\large\bf Abstract}
+  \vspace{-0.12in}\begin{quote}}
+    {\par\end{quote}\vskip 0.12in}
+
+% numbered section headings with different treatment of numbers
+
+\def\@startsection#1#2#3#4#5#6{\if@noskipsec \leavevmode \fi
+  \par \@tempskipa #4\relax
+  \@afterindenttrue
+  \ifdim \@tempskipa <\z@ \@tempskipa -\@tempskipa \fi
+  \if@nobreak \everypar{}\else
+    \addpenalty{\@secpenalty}\addvspace{\@tempskipa}\fi \@ifstar
+  {\@ssect{#3}{#4}{#5}{#6}}{\@dblarg{\@sict{#1}{#2}{#3}{#4}{#5}{#6}}}}
+
+\def\@sict#1#2#3#4#5#6[#7]#8{\ifnum #2>\c@secnumdepth
+    \def\@svsec{}\else
+    \refstepcounter{#1}\edef\@svsec{\csname the#1\endcsname}\fi
+  \@tempskipa #5\relax
+  \ifdim \@tempskipa>\z@
+    \begingroup #6\relax
+    \@hangfrom{\hskip #3\relax\@svsec.~}{\interlinepenalty \@M #8\par}
+    \endgroup
+    \csname #1mark\endcsname{#7}\addcontentsline
+    {toc}{#1}{\ifnum #2>\c@secnumdepth \else
+        \protect\numberline{\csname the#1\endcsname}\fi
+      #7}\else
+    \def\@svsechd{#6\hskip #3\@svsec #8\csname #1mark\endcsname
+      {#7}\addcontentsline
+      {toc}{#1}{\ifnum #2>\c@secnumdepth \else
+          \protect\numberline{\csname the#1\endcsname}\fi
+        #7}}\fi
+  \@xsect{#5}}
+
+\def\@sect#1#2#3#4#5#6[#7]#8{\ifnum #2>\c@secnumdepth
+    \def\@svsec{}\else
+    \refstepcounter{#1}\edef\@svsec{\csname the#1\endcsname\hskip 0.4em }\fi
+  \@tempskipa #5\relax
+  \ifdim \@tempskipa>\z@
+    \begingroup #6\relax
+    \@hangfrom{\hskip #3\relax\@svsec}{\interlinepenalty \@M #8\par}
+    \endgroup
+    \csname #1mark\endcsname{#7}\addcontentsline
+    {toc}{#1}{\ifnum #2>\c@secnumdepth \else
+        \protect\numberline{\csname the#1\endcsname}\fi
+      #7}\else
+    \def\@svsechd{#6\hskip #3\@svsec #8\csname #1mark\endcsname
+      {#7}\addcontentsline
+      {toc}{#1}{\ifnum #2>\c@secnumdepth \else
+          \protect\numberline{\csname the#1\endcsname}\fi
+        #7}}\fi
+  \@xsect{#5}}
+
+% section headings with less space above and below them
+\def\thesection {\arabic{section}}
+\def\thesubsection {\thesection.\arabic{subsection}}
+\def\section{\@startsection{section}{1}{\z@}{-0.12in}{0.02in}
+  {\large\bf\raggedright}}
+\def\subsection{\@startsection{subsection}{2}{\z@}{-0.10in}{0.01in}
+  {\normalsize\bf\raggedright}}
+\def\subsubsection{\@startsection{subsubsection}{3}{\z@}{-0.08in}{0.01in}
+  {\normalsize\sc\raggedright}}
+\def\paragraph{\@startsection{paragraph}{4}{\z@}{1.5ex plus
+    0.5ex minus .2ex}{-1em}{\normalsize\bf}}
+\def\subparagraph{\@startsection{subparagraph}{5}{\z@}{1.5ex plus
+    0.5ex minus .2ex}{-1em}{\normalsize\bf}}
+
+% Footnotes
+\footnotesep 6.65pt %
+\skip\footins 9pt
+\def\footnoterule{\kern-3pt \hrule width 0.8in \kern 2.6pt }
+\setcounter{footnote}{0}
+
+% Lists and paragraphs
+\parindent 0pt
+\topsep 4pt plus 1pt minus 2pt
+\partopsep 1pt plus 0.5pt minus 0.5pt
+\itemsep 2pt plus 1pt minus 0.5pt
+\parsep 2pt plus 1pt minus 0.5pt
+\parskip 6pt
+
+\leftmargin 2em \leftmargini\leftmargin \leftmarginii 2em
+\leftmarginiii 1.5em \leftmarginiv 1.0em \leftmarginv .5em
+\leftmarginvi .5em
+\labelwidth\leftmargini\advance\labelwidth-\labelsep \labelsep 5pt
+
+\def\@listi{\leftmargin\leftmargini}
+\def\@listii{\leftmargin\leftmarginii
+  \labelwidth\leftmarginii\advance\labelwidth-\labelsep
+  \topsep 2pt plus 1pt minus 0.5pt
+  \parsep 1pt plus 0.5pt minus 0.5pt
+  \itemsep \parsep}
+\def\@listiii{\leftmargin\leftmarginiii
+  \labelwidth\leftmarginiii\advance\labelwidth-\labelsep
+  \topsep 1pt plus 0.5pt minus 0.5pt
+  \parsep \z@ \partopsep 0.5pt plus 0pt minus 0.5pt
+  \itemsep \topsep}
+\def\@listiv{\leftmargin\leftmarginiv
+  \labelwidth\leftmarginiv\advance\labelwidth-\labelsep}
+\def\@listv{\leftmargin\leftmarginv
+  \labelwidth\leftmarginv\advance\labelwidth-\labelsep}
+\def\@listvi{\leftmargin\leftmarginvi
+  \labelwidth\leftmarginvi\advance\labelwidth-\labelsep}
+
+\abovedisplayskip 7pt plus2pt minus5pt%
+\belowdisplayskip \abovedisplayskip
+\abovedisplayshortskip  0pt plus3pt%
+\belowdisplayshortskip  4pt plus3pt minus3pt%
+
+% Less leading in most fonts (due to the narrow columns)
+% The choices were between 1-pt and 1.5-pt leading
+\def\@normalsize{\@setsize\normalsize{11pt}\xpt\@xpt}
+\def\small{\@setsize\small{10pt}\ixpt\@ixpt}
+\def\footnotesize{\@setsize\footnotesize{10pt}\ixpt\@ixpt}
+\def\scriptsize{\@setsize\scriptsize{8pt}\viipt\@viipt}
+\def\tiny{\@setsize\tiny{7pt}\vipt\@vipt}
+\def\large{\@setsize\large{14pt}\xiipt\@xiipt}
+\def\Large{\@setsize\Large{16pt}\xivpt\@xivpt}
+\def\LARGE{\@setsize\LARGE{20pt}\xviipt\@xviipt}
+\def\huge{\@setsize\huge{23pt}\xxpt\@xxpt}
+\def\Huge{\@setsize\Huge{28pt}\xxvpt\@xxvpt}
+
+% Revised formatting for figure captions and table titles.
+\captionsetup{
+  skip=0.1in,
+  font=small,
+  labelfont={it,small},
+  labelsep=period
+}
+\captionsetup[table]{position=above}
+\captionsetup[figure]{position=below}
+
+\def\fnum@figure{Figure \thefigure}
+\def\fnum@table{Table \thetable}
+
+% Strut macros for skipping spaces above and below text in tables.
+\def\abovestrut#1{\rule[0in]{0in}{#1}\ignorespaces}
+\def\belowstrut#1{\rule[-#1]{0in}{#1}\ignorespaces}
+
+\def\abovespace{\abovestrut{0.20in}}
+\def\aroundspace{\abovestrut{0.20in}\belowstrut{0.10in}}
+\def\belowspace{\belowstrut{0.10in}}
+
+% Various personal itemization commands.
+\def\texitem#1{\par\noindent\hangindent 12pt
+  \hbox to 12pt {\hss #1 ~}\ignorespaces}
+\def\icmlitem{\texitem{$\bullet$}}
+
+% To comment out multiple lines of text.
+\long\def\comment#1{}
+
+%% Line counter (not in final version). Adapted from NIPS style file by Christoph Sawade
+
+% Vertical Ruler
+% This code is, largely, from the CVPR 2010 conference style file
+% ----- define vruler
+\makeatletter
+\newbox\icmlrulerbox
+\newcount\icmlrulercount
+\newdimen\icmlruleroffset
+\newdimen\cv@lineheight
+\newdimen\cv@boxheight
+\newbox\cv@tmpbox
+\newcount\cv@refno
+\newcount\cv@tot
+% NUMBER with left flushed zeros  \fillzeros[<WIDTH>]<NUMBER>
+\newcount\cv@tmpc@ \newcount\cv@tmpc
+\def\fillzeros[#1]#2{\cv@tmpc@=#2\relax\ifnum\cv@tmpc@<0\cv@tmpc@=-\cv@tmpc@\fi
+  \cv@tmpc=1 %
+  \loop\ifnum\cv@tmpc@<10 \else \divide\cv@tmpc@ by 10 \advance\cv@tmpc by 1 \fi
+  \ifnum\cv@tmpc@=10\relax\cv@tmpc@=11\relax\fi \ifnum\cv@tmpc@>10 \repeat
+  \ifnum#2<0\advance\cv@tmpc1\relax-\fi
+  \loop\ifnum\cv@tmpc<#1\relax0\advance\cv@tmpc1\relax\fi \ifnum\cv@tmpc<#1 \repeat
+  \cv@tmpc@=#2\relax\ifnum\cv@tmpc@<0\cv@tmpc@=-\cv@tmpc@\fi \relax\the\cv@tmpc@}%
+% \makevruler[<SCALE>][<INITIAL_COUNT>][<STEP>][<DIGITS>][<HEIGHT>]
+\def\makevruler[#1][#2][#3][#4][#5]{
+  \begingroup\offinterlineskip
+  \textheight=#5\vbadness=10000\vfuzz=120ex\overfullrule=0pt%
+  \global\setbox\icmlrulerbox=\vbox to \textheight{%
+    {
+        \parskip=0pt\hfuzz=150em\cv@boxheight=\textheight
+        \cv@lineheight=#1\global\icmlrulercount=#2%
+        \cv@tot\cv@boxheight\divide\cv@tot\cv@lineheight\advance\cv@tot2%
+        \cv@refno1\vskip-\cv@lineheight\vskip1ex%
+        \loop\setbox\cv@tmpbox=\hbox to0cm{\hfil {\hfil\fillzeros[#4]\icmlrulercount}}%
+        \ht\cv@tmpbox\cv@lineheight\dp\cv@tmpbox0pt\box\cv@tmpbox\break
+        \advance\cv@refno1\global\advance\icmlrulercount#3\relax
+        \ifnum\cv@refno<\cv@tot\repeat
+      }
+  }
+  \endgroup
+}%
+\makeatother
+% ----- end of vruler
+
+% \makevruler[<SCALE>][<INITIAL_COUNT>][<STEP>][<DIGITS>][<HEIGHT>]
+\def\icmlruler#1{\makevruler[12pt][#1][1][3][\textheight]\usebox{\icmlrulerbox}}
+\AddToShipoutPicture{%
+  \icmlruleroffset=\textheight
+  \advance\icmlruleroffset by 5.2pt % top margin
+  \color[rgb]{.7,.7,.7}
+  \ificmlshowauthors\else
+    \AtTextUpperLeft{%
+      \put(\LenToUnit{-35pt},\LenToUnit{-\icmlruleroffset}){%left ruler
+        \icmlruler{\icmlrulercount}}
+      %\put(\LenToUnit{1.04\textwidth},\LenToUnit{-\icmlruleroffset}){%right ruler
+      %  \icmlruler{\icmlrulercount}}
+    }
+  \fi
+}
+\endinput
+
+
+
+
+
+\end{filecontents*}
+\documentclass{article}
+\usepackage{luatex85}
+\usepackage[T1]{fontenc}
+\usepackage{microtype,graphicx,booktabs,balance}
+\usepackage{hyperref,xurl}
+\usepackage[accepted]{icml2026}
+\makeatletter\renewcommand{\Notice@String}{}\makeatother
+\usepackage{amsmath,amssymb,amsthm,tikz,pgfplots}
+\usetikzlibrary{arrows.meta,positioning}
+\pgfplotsset{compat=1.18}
+\definecolor{teal}{HTML}{087F8C}
+\definecolor{navy}{HTML}{173B57}
+\definecolor{purple}{HTML}{6C3899}
+\hypersetup{pdftitle={Compiling Boosted Trees into Compact, Exact Decision Programs},pdfauthor={Brian Mingus},pdfsubject={Named-author research manuscript},pdfkeywords={XGBoost, exact compilation, decision rules, minimum description length, reinforcement learning}}
+\icmltitlerunning{Compiling Boosted Trees into Compact, Exact Decision Programs}
+\newcommand{\firstargmax}{\operatorname*{arg\,max}^{\mathrm{first}}}
+\newtheorem{proposition}{Proposition}
+\begin{document}
+\twocolumn[
+\icmltitle{Compiling Boosted Trees into Compact, Exact Decision Programs}
+\begin{icmlauthorlist}
+\icmlauthor{Brian Mingus}{cognatory}
+\end{icmlauthorlist}
+\icmlaffiliation{cognatory}{Cognatory, LLC, Denver, Colorado, USA}
+\icmlcorrespondingauthor{Brian Mingus}{brian@cognatory.com}
+\icmlkeywords{Exact compilation, decision rules, explainability, reinforcement learning}
+\vskip 0.3in
+]
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+Our C++23/CUDA system compiles XGBoost classifiers into executable binary rules preserving classes throughout a declared domain. Implementation and checks comprise about 41,000 lines of C++, 24,000 of CUDA, and 7,000 of Lean. Exact minimization uses the source-threshold grammar. Supervised combination supports nested holdout confirmation; reinforcement learning searches equivalent encodings. CUDA coverage and work sampling track about 100 quintillion cells and estimate remaining time conditionally. Experiments use public network-traffic and land-cover data. A 256-tree network-traffic model shrinks from about 120,000 to 1,600 nodes in about 1 second. A completed land-cover conversion represents about 300 million source-induced cells in about 12\,kB, with exhaustive native qualification. Checkpointing and hot loading let LLM-proposed proof-search strategies guide ongoing construction.
+\end{abstract}
+
+\section{The Decision Function as the Artifact}
+Boosted class decisions need not retain their additive structure: score changes can preserve the winner, and distinct branches can implement the same residual function. We compile these redundancies into executable rules.
+
+We combine exact compilation, grammar-scoped minimization, and learned representation search. XGBoost supplies models \citep{chen2016}; decision diagrams motivate function sharing \citep{bryant1986}. Algebraic forest aggregation is closely related \citep{gossen2023}.
+
+\paragraph{Exact class preservation.}
+Let $p_M(x)$ be the native CUDA probability vector of a frozen source model $M$, and let $f_G$ be the exported classifier. For a declared domain $\mathcal D$, acceptance requires
+\begin{equation}
+  \forall x\in\mathcal D:\quad
+  f_G(x)=\firstargmax_c p_{M,c}(x).
+  \label{eq:class-preservation}
+\end{equation}
+The first maximizing class resolves ties. Source accuracy is preserved on every labeled sample in $\mathcal D$. The input domain, missing-value routing, and native floating-point behavior are fixed before compilation.
+
+
+\begin{figure*}[t]
+\centering
+% COMPLETE selected physical CLSTREE1 trees; all nodes and branches retained.
+% Dependencies: TikZ and arrows.meta. Metadata parsing only; no model evaluation.
+\begingroup
+\definecolor{fwgBlue}{HTML}{174C67}
+\definecolor{fwgNeutral}{HTML}{687482}
+\definecolor{fwgRoot}{HTML}{6C3899}
+\definecolor{fwgLeft}{HTML}{1463A5}
+\definecolor{fwgRight}{HTML}{B44B20}
+\definecolor{fwgPatha0}{HTML}{6C3899}
+\definecolor{fwgPatha1}{HTML}{3C50A0}
+\definecolor{fwgPatha2}{HTML}{944256}
+\definecolor{fwgPatha3}{HTML}{4E5481}
+\definecolor{fwgPatha4}{HTML}{2E5C95}
+\definecolor{fwgPatha5}{HTML}{864F4C}
+\definecolor{fwgPatha6}{HTML}{A64738}
+\definecolor{fwgPatha7}{HTML}{565674}
+\definecolor{fwgPatha8}{HTML}{AE492B}
+\definecolor{fwgPathb0}{HTML}{6C3899}
+\definecolor{fwgPathb1}{HTML}{3C50A0}
+\definecolor{fwgPathb2}{HTML}{265AA3}
+\definecolor{fwgPathb3}{HTML}{1C5FA4}
+\definecolor{fwgPathb4}{HTML}{74525B}
+\definecolor{fwgPathb5}{HTML}{7E4D5A}
+\definecolor{fwgPathb6}{HTML}{445983}
+\definecolor{fwgPathb7}{HTML}{9C4C3A}
+\definecolor{fwgPathb8}{HTML}{944256}
+\definecolor{fwgPathb9}{HTML}{4E5481}
+\definecolor{fwgPathb10}{HTML}{2E5C95}
+\definecolor{fwgPathb11}{HTML}{864F4C}
+\definecolor{fwgPathb12}{HTML}{A64738}
+\definecolor{fwgPathb13}{HTML}{565674}
+\definecolor{fwgPathb14}{HTML}{AE492B}
+\definecolor{fwgPathc0}{HTML}{6C3899}
+\definecolor{fwgPathc1}{HTML}{3C50A0}
+\definecolor{fwgPathc2}{HTML}{265AA3}
+\definecolor{fwgPathc3}{HTML}{1C5FA4}
+\definecolor{fwgPathc4}{HTML}{74525B}
+\definecolor{fwgPathc5}{HTML}{7E4D5A}
+\definecolor{fwgPathc6}{HTML}{445983}
+\definecolor{fwgPathc7}{HTML}{9C4C3A}
+\definecolor{fwgPathc8}{HTML}{944256}
+\definecolor{fwgPathc9}{HTML}{4E5481}
+\definecolor{fwgPathc10}{HTML}{2E5C95}
+\definecolor{fwgPathc11}{HTML}{864F4C}
+\definecolor{fwgPathc12}{HTML}{475A7D}
+\definecolor{fwgPathc13}{HTML}{9F4D34}
+\definecolor{fwgPathc14}{HTML}{A64738}
+\definecolor{fwgPathc15}{HTML}{565674}
+\definecolor{fwgPathc16}{HTML}{325D8F}
+\definecolor{fwgPathc17}{HTML}{8A5046}
+\definecolor{fwgPathc18}{HTML}{AE492B}
+\definecolor{fwgPathd0}{HTML}{6C3899}
+\definecolor{fwgPathd1}{HTML}{3C50A0}
+\definecolor{fwgPathd2}{HTML}{265AA3}
+\definecolor{fwgPathd3}{HTML}{1C5FA4}
+\definecolor{fwgPathd4}{HTML}{74525B}
+\definecolor{fwgPathd5}{HTML}{7E4D5A}
+\definecolor{fwgPathd6}{HTML}{445983}
+\definecolor{fwgPathd7}{HTML}{9C4C3A}
+\definecolor{fwgPathd8}{HTML}{944256}
+\definecolor{fwgPathd9}{HTML}{4E5481}
+\definecolor{fwgPathd10}{HTML}{A64738}
+\definecolor{fwgPathd11}{HTML}{565674}
+\definecolor{fwgPathd12}{HTML}{325D8F}
+\definecolor{fwgPathd13}{HTML}{8A5046}
+\definecolor{fwgPathd14}{HTML}{AE492B}
+\definecolor{fwgRule}{HTML}{D5DFE3}
+\begin{tikzpicture}[x=1mm,y=1mm,
+fwgTest/.style={inner sep=0pt,outer sep=0pt,font=\fontsize{9}{10}\selectfont},
+fwgLeaf/.style={inner sep=0pt,outer sep=0pt,font=\fontsize{9}{10}\selectfont\bfseries},
+fwgBranch/.style={draw=fwgNeutral,line width=.3pt,-{Latex[length=1mm,width=.7mm]}},
+fwgEdgeLabel/.style={fill=white,inner sep=.12mm,font=\fontsize{8}{9}\selectfont},
+fwgPanelTitle/.style={font=\fontsize{8}{9}\selectfont,text=fwgBlue}]
+\path[use as bounding box] (0,0) rectangle (171.450,73.500);
+\draw[draw=fwgRule,line width=.25pt,rounded corners=.6mm] (0.000,44.000) rectangle (82.725,73.500);
+\node[fwgPanelTitle,align=center] at (41.362,71.700) {(a) $20\to9$ nodes; $d_s=2$, $\lambda=1$, $\gamma=0$, $w=1$};
+\draw[draw=fwgPatha0,line width=.4pt] (35.362,65.400) -- (35.362,64.000);
+\draw[fwgBranch,draw=fwgPatha1,line width=.4pt] (35.362,64.000) -- (29.362,64.000) -- (29.362,62.600);
+\draw[fwgBranch,draw=fwgPatha2,line width=.4pt] (35.362,64.000) -- (41.362,64.000) -- (41.362,62.600);
+\draw[draw=fwgPatha2,line width=.4pt] (41.362,58.400) -- (41.362,57.000);
+\draw[fwgBranch,draw=fwgPatha3,line width=.4pt] (41.362,57.000) -- (32.412,57.000) -- (32.412,55.600);
+\draw[fwgBranch,draw=fwgPatha6,line width=.4pt] (41.362,57.000) -- (50.312,57.000) -- (50.312,55.600);
+\draw[draw=fwgPatha3,line width=.4pt] (32.412,51.400) -- (32.412,50.000);
+\draw[fwgBranch,draw=fwgPatha4,line width=.4pt] (32.412,50.000) -- (26.412,50.000) -- (26.412,48.600);
+\draw[fwgBranch,draw=fwgPatha5,line width=.4pt] (32.412,50.000) -- (38.412,50.000) -- (38.412,48.600);
+\draw[draw=fwgPatha6,line width=.4pt] (50.312,51.400) -- (50.312,50.000);
+\draw[fwgBranch,draw=fwgPatha7,line width=.4pt] (50.312,50.000) -- (44.312,50.000) -- (44.312,48.600);
+\draw[fwgBranch,draw=fwgPatha8,line width=.4pt] (50.312,50.000) -- (56.312,50.000) -- (56.312,48.600);
+\node[fwgEdgeLabel] at (32.362,64.000) {yes};
+\node[fwgEdgeLabel] at (38.362,64.000) {no};
+\node[fwgEdgeLabel] at (36.887,57.000) {yes};
+\node[fwgEdgeLabel] at (45.837,57.000) {no};
+\node[fwgEdgeLabel] at (29.412,50.000) {yes};
+\node[fwgEdgeLabel] at (35.412,50.000) {no};
+\node[fwgEdgeLabel] at (47.312,50.000) {yes};
+\node[fwgEdgeLabel] at (53.312,50.000) {no};
+\node[fwgTest,text=fwgPatha0] (fwgan0) at (35.362,67.500) {\strut $d<53$};
+\node[fwgLeaf,text=fwgPatha1] (fwgan1) at (29.362,60.500) {\strut D};
+\node[fwgTest,text=fwgPatha2] (fwgan2) at (41.362,60.500) {\strut $d<993$};
+\node[fwgTest,text=fwgPatha3] (fwgan3) at (32.412,53.500) {\strut $d<445$};
+\node[fwgLeaf,text=fwgPatha4] (fwgan4) at (26.412,46.500) {\strut A};
+\node[fwgLeaf,text=fwgPatha5] (fwgan5) at (38.412,46.500) {\strut X};
+\node[fwgTest,text=fwgPatha6] (fwgan6) at (50.312,53.500) {\strut $d<1433$};
+\node[fwgLeaf,text=fwgPatha7] (fwgan7) at (44.312,46.500) {\strut A};
+\node[fwgLeaf,text=fwgPatha8] (fwgan8) at (56.312,46.500) {\strut D};
+\draw[draw=fwgRule,line width=.25pt,rounded corners=.6mm] (88.725,44.000) rectangle (171.450,73.500);
+\node[fwgPanelTitle,align=center] at (130.087,71.700) {(b) $38\to15$ nodes; $d_s=3$, $\lambda=1$, $\gamma=0$, $w=1$};
+\draw[draw=fwgPathb0,line width=.4pt] (130.087,65.400) -- (130.087,64.000);
+\draw[fwgBranch,draw=fwgPathb1,line width=.4pt] (130.087,64.000) -- (112.187,64.000) -- (112.187,62.600);
+\draw[fwgBranch,draw=fwgPathb8,line width=.4pt] (130.087,64.000) -- (147.987,64.000) -- (147.987,62.600);
+\draw[draw=fwgPathb1,line width=.4pt] (112.187,58.400) -- (112.187,57.000);
+\draw[fwgBranch,draw=fwgPathb2,line width=.4pt] (112.187,57.000) -- (103.237,57.000) -- (103.237,55.600);
+\draw[fwgBranch,draw=fwgPathb5,line width=.4pt] (112.187,57.000) -- (121.137,57.000) -- (121.137,55.600);
+\draw[draw=fwgPathb2,line width=.4pt] (103.237,51.400) -- (103.237,50.000);
+\draw[fwgBranch,draw=fwgPathb3,line width=.4pt] (103.237,50.000) -- (97.237,50.000) -- (97.237,48.600);
+\draw[fwgBranch,draw=fwgPathb4,line width=.4pt] (103.237,50.000) -- (109.237,50.000) -- (109.237,48.600);
+\draw[draw=fwgPathb5,line width=.4pt] (121.137,51.400) -- (121.137,50.000);
+\draw[fwgBranch,draw=fwgPathb6,line width=.4pt] (121.137,50.000) -- (115.137,50.000) -- (115.137,48.600);
+\draw[fwgBranch,draw=fwgPathb7,line width=.4pt] (121.137,50.000) -- (127.137,50.000) -- (127.137,48.600);
+\draw[draw=fwgPathb8,line width=.4pt] (147.987,58.400) -- (147.987,57.000);
+\draw[fwgBranch,draw=fwgPathb9,line width=.4pt] (147.987,57.000) -- (139.037,57.000) -- (139.037,55.600);
+\draw[fwgBranch,draw=fwgPathb12,line width=.4pt] (147.987,57.000) -- (156.937,57.000) -- (156.937,55.600);
+\draw[draw=fwgPathb9,line width=.4pt] (139.037,51.400) -- (139.037,50.000);
+\draw[fwgBranch,draw=fwgPathb10,line width=.4pt] (139.037,50.000) -- (133.037,50.000) -- (133.037,48.600);
+\draw[fwgBranch,draw=fwgPathb11,line width=.4pt] (139.037,50.000) -- (145.037,50.000) -- (145.037,48.600);
+\draw[draw=fwgPathb12,line width=.4pt] (156.937,51.400) -- (156.937,50.000);
+\draw[fwgBranch,draw=fwgPathb13,line width=.4pt] (156.937,50.000) -- (150.937,50.000) -- (150.937,48.600);
+\draw[fwgBranch,draw=fwgPathb14,line width=.4pt] (156.937,50.000) -- (162.937,50.000) -- (162.937,48.600);
+\node[fwgEdgeLabel] at (121.137,64.000) {yes};
+\node[fwgEdgeLabel] at (139.037,64.000) {no};
+\node[fwgEdgeLabel] at (107.712,57.000) {yes};
+\node[fwgEdgeLabel] at (116.662,57.000) {no};
+\node[fwgEdgeLabel] at (100.237,50.000) {yes};
+\node[fwgEdgeLabel] at (106.237,50.000) {no};
+\node[fwgEdgeLabel] at (118.137,50.000) {yes};
+\node[fwgEdgeLabel] at (124.137,50.000) {no};
+\node[fwgEdgeLabel] at (143.512,57.000) {yes};
+\node[fwgEdgeLabel] at (152.462,57.000) {no};
+\node[fwgEdgeLabel] at (136.037,50.000) {yes};
+\node[fwgEdgeLabel] at (142.037,50.000) {no};
+\node[fwgEdgeLabel] at (153.937,50.000) {yes};
+\node[fwgEdgeLabel] at (159.937,50.000) {no};
+\node[fwgTest,text=fwgPathb0] (fwgbn0) at (130.087,67.500) {\strut $d<993$};
+\node[fwgTest,text=fwgPathb1] (fwgbn1) at (112.187,60.500) {\strut $d<445$};
+\node[fwgTest,text=fwgPathb2] (fwgbn2) at (103.237,53.500) {\strut $d<53$};
+\node[fwgLeaf,text=fwgPathb3] (fwgbn3) at (97.237,46.500) {\strut D};
+\node[fwgLeaf,text=fwgPathb4] (fwgbn4) at (109.237,46.500) {\strut A};
+\node[fwgTest,text=fwgPathb5] (fwgbn5) at (121.137,53.500) {\strut $s<32100$};
+\node[fwgLeaf,text=fwgPathb6] (fwgbn6) at (115.137,46.500) {\strut A};
+\node[fwgLeaf,text=fwgPathb7] (fwgbn7) at (127.137,46.500) {\strut X};
+\node[fwgTest,text=fwgPathb8] (fwgbn8) at (147.987,60.500) {\strut $s<24073$};
+\node[fwgTest,text=fwgPathb9] (fwgbn9) at (139.037,53.500) {\strut $d<1049$};
+\node[fwgLeaf,text=fwgPathb10] (fwgbn10) at (133.037,46.500) {\strut A};
+\node[fwgLeaf,text=fwgPathb11] (fwgbn11) at (145.037,46.500) {\strut D};
+\node[fwgTest,text=fwgPathb12] (fwgbn12) at (156.937,53.500) {\strut $d<1433$};
+\node[fwgLeaf,text=fwgPathb13] (fwgbn13) at (150.937,46.500) {\strut A};
+\node[fwgLeaf,text=fwgPathb14] (fwgbn14) at (162.937,46.500) {\strut D};
+\draw[draw=fwgRule,line width=.25pt,rounded corners=.6mm] (0.000,6.500) rectangle (90.000,43.000);
+\node[fwgPanelTitle,align=center] at (45.000,41.200) {(c) $36\to19$ nodes; $d_s=4$, $\lambda=100$, $\gamma=20$, $w=1$};
+\draw[draw=fwgPathc0,line width=.4pt] (42.000,34.900) -- (42.000,33.500);
+\draw[fwgBranch,draw=fwgPathc1,line width=.4pt] (42.000,33.500) -- (21.100,33.500) -- (21.100,32.100);
+\draw[fwgBranch,draw=fwgPathc8,line width=.4pt] (42.000,33.500) -- (62.900,33.500) -- (62.900,32.100);
+\draw[draw=fwgPathc1,line width=.4pt] (21.100,27.900) -- (21.100,26.500);
+\draw[fwgBranch,draw=fwgPathc2,line width=.4pt] (21.100,26.500) -- (12.150,26.500) -- (12.150,25.100);
+\draw[fwgBranch,draw=fwgPathc5,line width=.4pt] (21.100,26.500) -- (30.050,26.500) -- (30.050,25.100);
+\draw[draw=fwgPathc2,line width=.4pt] (12.150,20.900) -- (12.150,19.500);
+\draw[fwgBranch,draw=fwgPathc3,line width=.4pt] (12.150,19.500) -- (6.150,19.500) -- (6.150,18.100);
+\draw[fwgBranch,draw=fwgPathc4,line width=.4pt] (12.150,19.500) -- (18.150,19.500) -- (18.150,18.100);
+\draw[draw=fwgPathc5,line width=.4pt] (30.050,20.900) -- (30.050,19.500);
+\draw[fwgBranch,draw=fwgPathc6,line width=.4pt] (30.050,19.500) -- (24.050,19.500) -- (24.050,18.100);
+\draw[fwgBranch,draw=fwgPathc7,line width=.4pt] (30.050,19.500) -- (36.050,19.500) -- (36.050,18.100);
+\draw[draw=fwgPathc8,line width=.4pt] (62.900,27.900) -- (62.900,26.500);
+\draw[fwgBranch,draw=fwgPathc9,line width=.4pt] (62.900,26.500) -- (47.950,26.500) -- (47.950,25.100);
+\draw[fwgBranch,draw=fwgPathc14,line width=.4pt] (62.900,26.500) -- (77.850,26.500) -- (77.850,25.100);
+\draw[draw=fwgPathc9,line width=.4pt] (47.950,20.900) -- (47.950,19.500);
+\draw[fwgBranch,draw=fwgPathc10,line width=.4pt] (47.950,19.500) -- (41.950,19.500) -- (41.950,18.100);
+\draw[fwgBranch,draw=fwgPathc11,line width=.4pt] (47.950,19.500) -- (53.950,19.500) -- (53.950,18.100);
+\draw[draw=fwgPathc11,line width=.4pt] (53.950,13.900) -- (53.950,12.500);
+\draw[fwgBranch,draw=fwgPathc12,line width=.4pt] (53.950,12.500) -- (47.950,12.500) -- (47.950,11.100);
+\draw[fwgBranch,draw=fwgPathc13,line width=.4pt] (53.950,12.500) -- (59.950,12.500) -- (59.950,11.100);
+\draw[draw=fwgPathc14,line width=.4pt] (77.850,20.900) -- (77.850,19.500);
+\draw[fwgBranch,draw=fwgPathc15,line width=.4pt] (77.850,19.500) -- (71.850,19.500) -- (71.850,18.100);
+\draw[fwgBranch,draw=fwgPathc18,line width=.4pt] (77.850,19.500) -- (83.850,19.500) -- (83.850,18.100);
+\draw[draw=fwgPathc15,line width=.4pt] (71.850,13.900) -- (71.850,12.500);
+\draw[fwgBranch,draw=fwgPathc16,line width=.4pt] (71.850,12.500) -- (65.850,12.500) -- (65.850,11.100);
+\draw[fwgBranch,draw=fwgPathc17,line width=.4pt] (71.850,12.500) -- (77.850,12.500) -- (77.850,11.100);
+\node[fwgEdgeLabel] at (31.550,33.500) {yes};
+\node[fwgEdgeLabel] at (52.450,33.500) {no};
+\node[fwgEdgeLabel] at (16.625,26.500) {yes};
+\node[fwgEdgeLabel] at (25.575,26.500) {no};
+\node[fwgEdgeLabel] at (9.150,19.500) {yes};
+\node[fwgEdgeLabel] at (15.150,19.500) {no};
+\node[fwgEdgeLabel] at (27.050,19.500) {yes};
+\node[fwgEdgeLabel] at (33.050,19.500) {no};
+\node[fwgEdgeLabel] at (55.425,26.500) {yes};
+\node[fwgEdgeLabel] at (70.375,26.500) {no};
+\node[fwgEdgeLabel] at (44.950,19.500) {yes};
+\node[fwgEdgeLabel] at (50.950,19.500) {no};
+\node[fwgEdgeLabel] at (50.950,12.500) {yes};
+\node[fwgEdgeLabel] at (56.950,12.500) {no};
+\node[fwgEdgeLabel] at (74.850,19.500) {yes};
+\node[fwgEdgeLabel] at (80.850,19.500) {no};
+\node[fwgEdgeLabel] at (68.850,12.500) {yes};
+\node[fwgEdgeLabel] at (74.850,12.500) {no};
+\node[fwgTest,text=fwgPathc0] (fwgcn0) at (42.000,37.000) {\strut $d<1433$};
+\node[fwgTest,text=fwgPathc1] (fwgcn1) at (21.100,30.000) {\strut $d<445$};
+\node[fwgTest,text=fwgPathc2] (fwgcn2) at (12.150,23.000) {\strut $d<53$};
+\node[fwgLeaf,text=fwgPathc3] (fwgcn3) at (6.150,16.000) {\strut D};
+\node[fwgLeaf,text=fwgPathc4] (fwgcn4) at (18.150,16.000) {\strut A};
+\node[fwgTest,text=fwgPathc5] (fwgcn5) at (30.050,23.000) {\strut $d<993$};
+\node[fwgLeaf,text=fwgPathc6] (fwgcn6) at (24.050,16.000) {\strut X};
+\node[fwgLeaf,text=fwgPathc7] (fwgcn7) at (36.050,16.000) {\strut A};
+\node[fwgTest,text=fwgPathc8] (fwgcn8) at (62.900,30.000) {\strut $s<54131$};
+\node[fwgTest,text=fwgPathc9] (fwgcn9) at (47.950,23.000) {\strut $s<47348$};
+\node[fwgLeaf,text=fwgPathc10] (fwgcn10) at (41.950,16.000) {\strut D};
+\node[fwgTest,text=fwgPathc11] (fwgcn11) at (53.950,16.000) {\strut $d<21251$};
+\node[fwgLeaf,text=fwgPathc12] (fwgcn12) at (47.950,9.000) {\strut A};
+\node[fwgLeaf,text=fwgPathc13] (fwgcn13) at (59.950,9.000) {\strut D};
+\node[fwgTest,text=fwgPathc14] (fwgcn14) at (77.850,23.000) {\strut $s<57631$};
+\node[fwgTest,text=fwgPathc15] (fwgcn15) at (71.850,16.000) {\strut $d<5529$};
+\node[fwgLeaf,text=fwgPathc16] (fwgcn16) at (65.850,9.000) {\strut A};
+\node[fwgLeaf,text=fwgPathc17] (fwgcn17) at (77.850,9.000) {\strut D};
+\node[fwgLeaf,text=fwgPathc18] (fwgcn18) at (83.850,16.000) {\strut D};
+\draw[draw=fwgRule,line width=.25pt,rounded corners=.6mm] (96.000,6.500) rectangle (171.450,43.000);
+\node[fwgPanelTitle,align=center] at (133.725,41.200) {(d) $34\to15$ nodes; $d_s=4$, $\lambda=100$, $\gamma=0$, $w=100$};
+\draw[draw=fwgPathd0,line width=.4pt] (135.200,34.900) -- (135.200,33.500);
+\draw[fwgBranch,draw=fwgPathd1,line width=.4pt] (135.200,33.500) -- (122.625,33.500) -- (122.625,32.100);
+\draw[fwgBranch,draw=fwgPathd8,line width=.4pt] (135.200,33.500) -- (147.775,33.500) -- (147.775,32.100);
+\draw[draw=fwgPathd1,line width=.4pt] (122.625,27.900) -- (122.625,26.500);
+\draw[fwgBranch,draw=fwgPathd2,line width=.4pt] (122.625,26.500) -- (113.675,26.500) -- (113.675,25.100);
+\draw[fwgBranch,draw=fwgPathd5,line width=.4pt] (122.625,26.500) -- (131.575,26.500) -- (131.575,25.100);
+\draw[draw=fwgPathd2,line width=.4pt] (113.675,20.900) -- (113.675,19.500);
+\draw[fwgBranch,draw=fwgPathd3,line width=.4pt] (113.675,19.500) -- (107.675,19.500) -- (107.675,18.100);
+\draw[fwgBranch,draw=fwgPathd4,line width=.4pt] (113.675,19.500) -- (119.675,19.500) -- (119.675,18.100);
+\draw[draw=fwgPathd5,line width=.4pt] (131.575,20.900) -- (131.575,19.500);
+\draw[fwgBranch,draw=fwgPathd6,line width=.4pt] (131.575,19.500) -- (125.575,19.500) -- (125.575,18.100);
+\draw[fwgBranch,draw=fwgPathd7,line width=.4pt] (131.575,19.500) -- (137.575,19.500) -- (137.575,18.100);
+\draw[draw=fwgPathd8,line width=.4pt] (147.775,27.900) -- (147.775,26.500);
+\draw[fwgBranch,draw=fwgPathd9,line width=.4pt] (147.775,26.500) -- (141.775,26.500) -- (141.775,25.100);
+\draw[fwgBranch,draw=fwgPathd10,line width=.4pt] (147.775,26.500) -- (153.775,26.500) -- (153.775,25.100);
+\draw[draw=fwgPathd10,line width=.4pt] (153.775,20.900) -- (153.775,19.500);
+\draw[fwgBranch,draw=fwgPathd11,line width=.4pt] (153.775,19.500) -- (147.775,19.500) -- (147.775,18.100);
+\draw[fwgBranch,draw=fwgPathd14,line width=.4pt] (153.775,19.500) -- (159.775,19.500) -- (159.775,18.100);
+\draw[draw=fwgPathd11,line width=.4pt] (147.775,13.900) -- (147.775,12.500);
+\draw[fwgBranch,draw=fwgPathd12,line width=.4pt] (147.775,12.500) -- (141.775,12.500) -- (141.775,11.100);
+\draw[fwgBranch,draw=fwgPathd13,line width=.4pt] (147.775,12.500) -- (153.775,12.500) -- (153.775,11.100);
+\node[fwgEdgeLabel] at (128.912,33.500) {yes};
+\node[fwgEdgeLabel] at (141.487,33.500) {no};
+\node[fwgEdgeLabel] at (118.150,26.500) {yes};
+\node[fwgEdgeLabel] at (127.100,26.500) {no};
+\node[fwgEdgeLabel] at (110.675,19.500) {yes};
+\node[fwgEdgeLabel] at (116.675,19.500) {no};
+\node[fwgEdgeLabel] at (128.575,19.500) {yes};
+\node[fwgEdgeLabel] at (134.575,19.500) {no};
+\node[fwgEdgeLabel] at (144.775,26.500) {yes};
+\node[fwgEdgeLabel] at (150.775,26.500) {no};
+\node[fwgEdgeLabel] at (150.775,19.500) {yes};
+\node[fwgEdgeLabel] at (156.775,19.500) {no};
+\node[fwgEdgeLabel] at (144.775,12.500) {yes};
+\node[fwgEdgeLabel] at (150.775,12.500) {no};
+\node[fwgTest,text=fwgPathd0] (fwgdn0) at (135.200,37.000) {\strut $d<1433$};
+\node[fwgTest,text=fwgPathd1] (fwgdn1) at (122.625,30.000) {\strut $d<445$};
+\node[fwgTest,text=fwgPathd2] (fwgdn2) at (113.675,23.000) {\strut $d<53$};
+\node[fwgLeaf,text=fwgPathd3] (fwgdn3) at (107.675,16.000) {\strut D};
+\node[fwgLeaf,text=fwgPathd4] (fwgdn4) at (119.675,16.000) {\strut A};
+\node[fwgTest,text=fwgPathd5] (fwgdn5) at (131.575,23.000) {\strut $d<993$};
+\node[fwgLeaf,text=fwgPathd6] (fwgdn6) at (125.575,16.000) {\strut X};
+\node[fwgLeaf,text=fwgPathd7] (fwgdn7) at (137.575,16.000) {\strut A};
+\node[fwgTest,text=fwgPathd8] (fwgdn8) at (147.775,30.000) {\strut $s<47348$};
+\node[fwgLeaf,text=fwgPathd9] (fwgdn9) at (141.775,23.000) {\strut D};
+\node[fwgTest,text=fwgPathd10] (fwgdn10) at (153.775,23.000) {\strut $s<54131$};
+\node[fwgTest,text=fwgPathd11] (fwgdn11) at (147.775,16.000) {\strut $d<21251$};
+\node[fwgLeaf,text=fwgPathd12] (fwgdn12) at (141.775,9.000) {\strut A};
+\node[fwgLeaf,text=fwgPathd13] (fwgdn13) at (153.775,9.000) {\strut D};
+\node[fwgLeaf,text=fwgPathd14] (fwgdn14) at (159.775,16.000) {\strut D};
+\node[anchor=south,align=center,font=\fontsize{7.2}{8}\selectfont,inner sep=0pt] at (85.725,0) {
+\textcolor{fwgRoot}{\textbf{Root}};\quad \textcolor{fwgLeft}{left / yes};\quad \textcolor{fwgRight}{right / no}. Color blends path and direction.\quad $s,d$: source/destination port. A: allow; D: deny; X: drop.\\
+$d_s$: source depth limit; $r$: boost rounds; $\gamma$: split penalty; $w$: min. Hessian weight.\quad Shared: $r=1$, $\eta=0.1$. NaN follows no/right.};
+\end{tikzpicture}
+\endgroup
+
+\caption{Complete firewall decision functions after exact minimization. The four trees have distinct branching structures and were selected from a 96-setting source-model sweep. Counts compare source-ensemble nodes with final physical-tree nodes. All predicates and leaves are shown; colors encode branch ancestry. Each tree is smallest within its source-threshold grammar, with depth used to break size ties.}
+\label{fig:rules}
+\end{figure*}
+\section{Compilation and Exact Simplification}
+Source thresholds partition inputs into cells with fixed paths. The compiler certifies class-constant regions, refines unresolved regions, and shares residual functions. Deployment retains only reachable structure and class terminals. CUDA performs numerical evaluation and qualification; C++23 handles orchestration and serialization.
+
+Region bounds provide conditional class certificates under the pinned native-semantic premise. Exhaustive replay checks every induced cell. Sample agreement alone does not establish Equation~\ref{eq:class-preservation}.
+
+\paragraph{Minimum physical trees on two features.}
+Place existing thresholds on both feature axes. Set $L(R)=1$ for a class-constant rectangle; otherwise define
+\begin{equation}
+L(R)=\min_{s\in S(R)}\bigl[L(R_s^-)+L(R_s^+)\bigr],
+\end{equation}
+where $S(R)$ contains every interior cut on either axis.
+
+\begin{proposition}
+The recurrence returns a minimum-leaf physical binary tree among all trees using the supplied axis-aligned thresholds on $R$.
+\end{proposition}
+\begin{proof}
+A constant rectangle needs one leaf. Every nonconstant admissible tree chooses a root in $S(R)$. Each resulting rectangle has fewer cells; induction supplies its minimum leaf count. Minimizing over all roots attains the lower bound.
+\end{proof}
+CUDA permits arbitrary feature order and breaks size ties by depth. A full binary tree has $2L-1$ nodes, so its fixed-width encoding is also minimized. Time is $O(m^2n^2(m+n))$ and memory $O(m^2n^2)$ for an $m\times n$ grid. Optimality is relative to this grammar, not arbitrary arithmetic programs or shared graphs.
+
+
+\section{Real Firewall Models, Complete Rules}
+\paragraph{Protocol.}
+The 65,532 UCI Internet Firewall records \citep{firewall2019} supply source/destination ports and four logged actions. A label-independent hash groups identical port pairs into 52,362 training and 13,170 held-out records (seed 20260924), without overlap. We use XGBoost 3.4.1 on an RTX A5000 Laptop GPU under WSL. NaNs route right, matching the highest intervals. Region bounds supply conditional native-class certificates.
+
+\paragraph{A sweep of executable explanations.}
+The 96 settings cross depth $\{2,3,4\}$, rounds $\{1,4\}$, learning rate $\{0.1,1\}$, $L_2$ penalty $\{1,100\}$, minimum split gain $\{0,20\}$, and minimum Hessian weight $\{1,100\}$, using \texttt{hist} and \texttt{max\_bin=64}. Each conversion and finite-or-NaN FP32 certificate takes about 0.3--0.4 seconds; training and conversion total about 2 minutes. The 75 distinct sources yield 30 tree encodings.
+
+Exact minimization reduces 27 of those 30 trees, producing 28 distinct minimum encodings in about 6 seconds; one shrinks from 85 to 49 nodes. Full finite-cell and NaN-pattern comparisons retain every class. Figure~\ref{fig:rules} selects four complete trees for structural diversity without using held-out accuracy.
+
+\paragraph{Decisions as equations.}
+For predicate $p$, each internal node exports the exact class-indicator equation
+\begin{equation}
+\mathbf v(x)=\mathbf1[p(x)]\mathbf v_L(x)
+             +(1-\mathbf1[p(x)])\mathbf v_R(x),
+\end{equation}
+with one-hot class vectors at terminals. Shared functions are named once and reused. For Figure~\ref{fig:rules}(a), let $d$ be a finite destination port. The complete allow rule is simply
+\begin{equation}
+\mathrm{allow}(d)\ \Longleftrightarrow\
+d\in[53,445)\cup[993,1433).
+\end{equation}
+The interval $445\le d<993$ maps to drop; remaining values, including NaN, map to deny. These hard equations execute the complete class rule. Replacing indicators with smooth gates defines a separate fuzzy model.
+
+\paragraph{How this complements SHAP.}
+SHAP attributes model output to features \citep{lundberg2017,lundberg2020}; our rules expose class-determining predicates. Constant classes can coexist with varying scores and attributions. SHAP explains score contributions; rules reveal thresholds and branch interactions. Logged-action agreement measures decision reproduction, not connection safety.
+
+
+\section{Measured Scaling and Representation Learning}
+\paragraph{Depth and ensemble size.}
+At two boosting rounds, all eight depth-1--16 models convert in under 0.4 seconds (Figure~\ref{fig:depth}). At depth 16, scaling through 64 rounds also completes. All 13 classifiers match every held-out source prediction (Table~\ref{tab:scaling}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{semilogyaxis}[width=\columnwidth,height=3.5cm,xmin=0,xmax=17,ymin=3,ymax=6000,
+xtick={1,4,8,12,16},ytick={10,100,1000},yticklabels={10,100,{1,000}},xlabel={Maximum source depth},ylabel={Nodes},
+grid=major,grid style={gray!18},tick label style={font=\small},label style={font=\small},
+legend style={font=\footnotesize,draw=none,at={(0.98,0.02)},anchor=south east}]
+\addplot[color=navy,thick,mark=square*,mark size=1.5pt] coordinates {(1,22)(2,40)(3,76)(4,124)(6,298)(8,628)(12,2160)(16,3370)};
+\addlegendentry{Source ensemble}
+\addplot[color=teal,thick,mark=*,mark size=1.5pt] coordinates {(1,5)(2,9)(3,17)(4,23)(6,69)(8,181)(12,583)(16,751)};
+\addlegendentry{Exact binary tree}
+\end{semilogyaxis}
+\end{tikzpicture}
+\caption{Measured source and exact-tree growth at two boosting rounds (eight trees) with a fixed histogram budget.}
+\label{fig:depth}
+\end{figure}
+
+\begin{table}[t]
+\caption{Complete depth-16 conversions. Times include conversion, certification and export; training is excluded. Sizes use decimal kB.}
+\label{tab:scaling}
+\centering\small
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+Trees & Source nodes & Final nodes & kB & Seconds\\
+\midrule
+8 & 3,370 & 751 & 25 & 0.4\\
+32 & 14,590 & 999 & 33 & 0.4\\
+128 & 67,990 & 1,335 & 44 & 0.7\\
+256 & 121,032 & 1,567 & 52 & 1\\
+\bottomrule
+\end{tabular}
+\end{table}
+The largest case removes about 99\% of source nodes while preserving 94.8\% held-out accuracy. Training takes about 2 seconds; peak host RSS is about 260 MiB. Timings are single unprofiled observations.
+
+\paragraph{What governs scaling.}
+For $q_j$ distinct thresholds on feature $j$, the finite numeric partition has at most
+\begin{equation}
+  C\le\prod_{j=1}^{F}(q_j+1).
+\end{equation}
+NaNs add a stratum; categories restrict feasible signatures. The largest firewall source has 63 cuts per port: 4,096 finite cells (4,225 with NaNs). Training limits cuts \citep{xgbdocs}; conversion adds no quantization. Tree count need not track partition size.
+
+A completed Covertype case \citep{blackard1998} uses 35 depth-three trees trained on 448 rows, inducing about 300 million cells over fractional finite FP32 inputs and exactly-one wilderness/soil groups. Its 12\,kB graph has about 1,200 shared nodes (24,000 unfolded). Construction takes about 20 seconds; exhaustive native qualification takes about 12 minutes. Extrapolating that replay rate gives about 29 days per trillion cells, without predicting construction cost.
+
+\paragraph{Progress over quintillion-cell spaces.}
+A 448-tree Covertype source has about 100 quintillion cells. A bounded 262,144-expansion run settles about 40 quadrillion (0.04\%) in about 6 seconds. CUDA propagates coverage as $p(v)=\alpha_Lp(v_L)+\alpha_Rp(v_R)$ using branch grid masses $\alpha_L,\alpha_R$. Directed rounding and exact integer accounting bound settled and remaining cells. Shared functions retain separate contributions from disjoint incoming regions.
+
+\paragraph{Estimating remaining computation.}
+Coverage is not a time fraction. Under a fixed construction policy, CUDA samples root paths and weights work by inverse path probability \citep{chen1992}: $\widehat W=\sum_d c(v_d)/\pi_d$. Remaining work divided by compatible throughput estimates remaining time. Ranges show sample variation, not confidence intervals. Censoring, overflow, or policy mismatch withhold estimates. A bounded 448-tree probe yields a finite, high-variance estimate; full conversion remains incomplete.
+
+\paragraph{Learning across source models.}
+The original study uses about 42,000 fitting and 10,000 validation records, with five group-separated folds for combiner inputs. Validation errors fall from 420 (native) to 406 (ridge) and 402 (nonlinear XGBoost). The nonlinear classifier compiles to 857 nodes: about 8\,kB shared or 3\,kB in lossless physical-tree transport. Yet test errors rise from 647 to 658 on 13,170 records.
+
+\paragraph{Nested holdout confirmation.}
+From the original fitting set, we reserve about 10,000 records by whole port-pair group, leaving about 32,000. We retrain 448 source configurations; five group-separated folds feed 36 nonlinear settings. Unchanged validation selects a combiner C (459 errors) and best native baseline B (469); both are frozen. At depths 1, 2, 4 and 8, C must make fewer errors in every disjoint holdout block; otherwise B is retained without retry. Lower depths merge the same eight blocks.
+
+\begin{table}[h]
+\caption{Native prediction results by confirmation depth after refitting. C: combiner; B: baseline.}
+\label{tab:holdout}
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Holdout depth & 0 & 1 & 2 & 4 & 8\\
+\midrule
+Passed/evaluated & --- & 1/1 & 2/2 & 2/3 & 1/2\\
+Selected model & C & C & C & B & B\\
+Test errors & 691 & 691 & 691 & 700 & 700\\
+\bottomrule
+\end{tabular}
+\end{table}
+Depths 4 and 8 discard C's nine-error test advantage (Table~\ref{tab:holdout}); more holdouts need not improve selection. The pair and sample are fixed; depth is not selected by test score. These dependent, retrospective comparisons use previously observed data; external generalization remains unmeasured.
+
+\paragraph{Reinforcement learning (RL).}
+CUDA policy-gradient updates \citep{williams1992} minimize description length \citep{rissanen1978} over 44 category-order logits. Qualified seven-tree warmup saves 8 of 1,207 bytes; 32 updates reproduce the reference using two qualified costs. Fourteen-tree transfer saves 34 of 4,214 bytes, matching uniform search: integration is demonstrated, but no transfer advantage. Deployment needs no policy. Separately, 249 checked rewrites save 33\% (6.3 to 4.2\,kB) while preserving classes.
+
+\section{Conclusion}
+Exact compilation yields compact classifiers and executable equations. We demonstrate minimum trees within a stated grammar, supervised combination, and RL integration. Holdout depth affects selection; CUDA coverage and conditional forecasts quantify progress on unfinished searches.
+
+\clearpage
+\balance
+\begin{thebibliography}{10}
+\interlinepenalty=10000
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Blackard(1998)]{blackard1998}
+Blackard, J.
+\newblock Covertype [dataset].
+\newblock UCI Machine Learning Repository, 1998.
+\newblock URL \url{https://doi.org/10.24432/C50K5N}.
+
+\bibitem[Bryant(1986)]{bryant1986}
+Bryant, R.~E.
+\newblock Graph-based algorithms for {Boolean} function manipulation.
+\newblock \emph{IEEE Transactions on Computers}, C-35\penalty0 (8):\penalty0
+  677--691, 1986.
+\newblock \doi{10.1109/TC.1986.1676819}.
+\newblock URL \url{https://doi.org/10.1109/TC.1986.1676819}.
+
+\bibitem[Chen(1992)]{chen1992}
+Chen, P.~C.
+\newblock Heuristic sampling: A method for predicting the performance of tree searching programs.
+\newblock \emph{SIAM Journal on Computing}, 21(2):295--315, 1992.
+\newblock \url{https://doi.org/10.1137/0221022}.
+
+\bibitem[Chen \& Guestrin(2016)Chen and Guestrin]{chen2016}
+Chen, T. and Guestrin, C.
+\newblock {XGBoost}: A scalable tree boosting system.
+\newblock In \emph{Proceedings of the 22nd ACM SIGKDD International Conference
+  on Knowledge Discovery and Data Mining}, pp.\  785--794. ACM, 2016.
+\newblock \doi{10.1145/2939672.2939785}.
+\newblock URL \url{https://doi.org/10.1145/2939672.2939785}.
+
+\bibitem[Gossen \& Steffen(2023)Gossen and Steffen]{gossen2023}
+Gossen, F. and Steffen, B.
+\newblock Algebraic aggregation of random forests: towards explainability and
+  rapid evaluation.
+\newblock \emph{International Journal on Software Tools for Technology
+  Transfer}, 25\penalty0 (3):\penalty0 267--285, 2023.
+\newblock \doi{10.1007/s10009-021-00635-x}.
+\newblock URL \url{https://doi.org/10.1007/s10009-021-00635-x}.
+
+\bibitem[Internet Firewall Data(2019)]{firewall2019}
+Internet Firewall Data [Dataset].
+\newblock UCI Machine Learning Repository, 2019.
+\newblock URL \url{https://doi.org/10.24432/C5131M}.
+
+\bibitem[Lundberg \& Lee(2017)Lundberg and Lee]{lundberg2017}
+Lundberg, S.~M. and Lee, S.-I.
+\newblock A unified approach to interpreting model predictions.
+\newblock In \emph{Advances in Neural Information Processing Systems},
+  volume~30, pp.\  4765--4774. Curran Associates, Inc., 2017.
+\newblock URL
+  \url{https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html}.
+
+\bibitem[Lundberg et~al.(2020)Lundberg, Erion, Chen, DeGrave, Prutkin, Nair,
+  Katz, Himmelfarb, Bansal, and Lee]{lundberg2020}
+Lundberg, S.~M., Erion, G., Chen, H., DeGrave, A., Prutkin, J.~M., Nair, B.,
+  Katz, R., Himmelfarb, J., Bansal, N., and Lee, S.-I.
+\newblock From local explanations to global understanding with explainable {AI}
+  for trees.
+\newblock \emph{Nature Machine Intelligence}, 2\penalty0 (1):\penalty0 56--67,
+  2020.
+\newblock \doi{10.1038/s42256-019-0138-9}.
+\newblock URL \url{https://doi.org/10.1038/s42256-019-0138-9}.
+
+\bibitem[Rissanen(1978)]{rissanen1978}
+Rissanen, J.
+\newblock Modeling by shortest data description.
+\newblock \emph{Automatica}, 14\penalty0 (5):\penalty0 465--471, 1978.
+\newblock \doi{10.1016/0005-1098(78)90005-5}.
+\newblock URL \url{https://doi.org/10.1016/0005-1098(78)90005-5}.
+
+\bibitem[Williams(1992)]{williams1992}
+Williams, R.~J.
+\newblock Simple statistical gradient-following algorithms for connectionist
+  reinforcement learning.
+\newblock \emph{Machine Learning}, 8\penalty0 (3--4):\penalty0 229--256, 1992.
+\newblock \doi{10.1007/BF00992696}.
+\newblock URL \url{https://doi.org/10.1007/BF00992696}.
+
+\bibitem[{XGBoost Developers}(2026)]{xgbdocs}
+{XGBoost Developers}.
+\newblock Tree methods: Approximated solutions.
+\newblock Official XGBoost documentation, 2026.
+\newblock URL
+  \url{https://raw.githubusercontent.com/dmlc/xgboost/v3.4.1/doc/treemethod.rst}.
+\newblock Version 3.4.1; accessed October 2, 2026.
+
+\end{thebibliography}
+\end{document}

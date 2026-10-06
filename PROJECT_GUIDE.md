@@ -4,7 +4,7 @@ Decision Programs turns trained XGBoost classifiers into compact, executable dec
 
 The numerical implementation is C++23 and CUDA. Lean sources formalize the mathematical construction and rewrite rules. Brian Mingus develops this project as research software under the MIT license.
 
-[Read the paper](https://brianmingus.com/papers/exact-decisions-white-paper.pdf) · [Build instructions](docs/building.md) · [CLI reference](docs/CLI.md) · [License](LICENSE)
+[Read the paper](docs/paper/decision-programs-paper.pdf) · [Paper source and build](docs/paper/) · [Build instructions](docs/building.md) · [CLI reference](docs/CLI.md) · [License](LICENSE)
 
 ## Start here
 
@@ -107,7 +107,7 @@ These examples are documented in the accompanying manuscript and describe partic
 - A complete 35-tree Covertype example covered roughly 300 million source-induced cells with a shared representation of about 12 kB.
 - A separate completed example shrank from about 6.3 kB to 4.2 kB through exact simplification.
 - The RL component was integrated and exercised with qualification checks. Its presence is a software result; the reported transfer comparison did not demonstrate an advantage over its uniform control.
-- Supervised combination improved validation selection in the reported study. Its subsequent held-out evaluation did not improve on the baseline.
+- The original supervised-combination study improved validation selection but not its test result. A refitted follow-up made 691 test errors with the combiner versus 700 with the baseline. One or two confirmation holdouts retained the combiner; four or eight rejected it. These are retrospective comparisons on previously observed data, not a guarantee that more holdouts improve generalization.
 
 ## Source map
 
