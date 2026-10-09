@@ -30,45 +30,37 @@ def maxOver (f : Pair → Int) : Pair → List Pair → Int
   | p, [] => f p
   | p, q :: qs => max (f p) (maxOver f q qs)
 
+private theorem min_over_lower_bounds (f : Pair → Int) (ps : List Pair) :
+    ∀ p k, k ≤ minOver f p ps ↔ ∀ q ∈ p :: ps, k ≤ f q := by
+  induction ps with
+  | nil => simp [minOver]
+  | cons r rs ih => simp [minOver, Int.le_min, ih]
+
+private theorem max_over_upper_bounds (f : Pair → Int) (ps : List Pair) :
+    ∀ p k, maxOver f p ps ≤ k ↔ ∀ q ∈ p :: ps, f q ≤ k := by
+  induction ps with
+  | nil => simp [maxOver]
+  | cons r rs ih => simp [maxOver, Int.max_le, ih]
+
 theorem min_over_le_member (f : Pair → Int) (ps : List Pair) :
     ∀ p q, q ∈ p :: ps → minOver f p ps ≤ f q := by
-  induction ps with
-  | nil => intro p q h; simp only [List.mem_cons, List.not_mem_nil, or_false] at h; subst q; exact Int.le_refl _
-  | cons r rs ih =>
-    intro p q h
-    simp only [List.mem_cons] at h
-    rcases h with h | h
-    · subst q; exact Int.min_le_left _ _
-    · exact Int.le_trans (Int.min_le_right _ _) (ih r q (List.mem_cons.mpr h))
+  intro p q member
+  exact (min_over_lower_bounds f ps p _).mp (Int.le_refl _) q member
 
 theorem le_min_over (f : Pair → Int) (ps : List Pair) :
     ∀ p k, (∀ q ∈ p :: ps, k ≤ f q) → k ≤ minOver f p ps := by
-  induction ps with
-  | nil => intro p k h; exact h p (by simp)
-  | cons r rs ih =>
-    intro p k h
-    apply Int.le_min.mpr
-    exact ⟨h p (by simp), ih r k (by intro q hq; exact h q (List.mem_cons.mpr (Or.inr hq)))⟩
+  intro p k lower
+  exact (min_over_lower_bounds f ps p k).mpr lower
 
 theorem member_le_max_over (f : Pair → Int) (ps : List Pair) :
     ∀ p q, q ∈ p :: ps → f q ≤ maxOver f p ps := by
-  induction ps with
-  | nil => intro p q h; simp only [List.mem_cons, List.not_mem_nil, or_false] at h; subst q; exact Int.le_refl _
-  | cons r rs ih =>
-    intro p q h
-    simp only [List.mem_cons] at h
-    rcases h with h | h
-    · subst q; exact Int.le_max_left _ _
-    · exact Int.le_trans (ih r q (List.mem_cons.mpr h)) (Int.le_max_right _ _)
+  intro p q member
+  exact (max_over_upper_bounds f ps p _).mp (Int.le_refl _) q member
 
 theorem max_over_le (f : Pair → Int) (ps : List Pair) :
     ∀ p k, (∀ q ∈ p :: ps, f q ≤ k) → maxOver f p ps ≤ k := by
-  induction ps with
-  | nil => intro p k h; exact h p (by simp)
-  | cons r rs ih =>
-    intro p k h
-    apply Int.max_le.mpr
-    exact ⟨h p (by simp), ih r k (by intro q hq; exact h q (List.mem_cons.mpr (Or.inr hq)))⟩
+  intro p k upper
+  exact (max_over_upper_bounds f ps p k).mpr upper
 
 structure Interval where
   lo : Int

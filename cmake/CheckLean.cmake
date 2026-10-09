@@ -21,35 +21,25 @@ foreach(dp_toolchain IN LISTS dp_toolchains)
     message(FATAL_ERROR "Unsupported proof toolchain: ${dp_toolchain}")
   endif()
 endforeach()
-# Actual local import order; duplicate DynamicAtomRestriction copies have the
-# same module identity. TacticProbe playgrounds are not maintained proofs.
+# Maintained modules in dependency order. Every module has one canonical source.
 set(dp_modules
-  balanced_bins/BalancedBins
   region_proof_synthesis/CoverRefinement region_proof_synthesis/RegionEnvelope
   score_diagram_congruence/ScoreDiagramCongruence
   score_add_apply_congruence/ScoreAddApplyCongruence
   class_apply_congruence/ClassApplyCongruence
   dynamic_atom_restriction/DynamicAtomRestriction
   adjacent_predicate_bypass/AdjacentPredicateBypass literal_path_bound/LiteralPathBound
-  numeric_triple_sweep/NumericTripleSweep ordered_branch_laws/OrderedBranchLaws
+  ordered_branch_laws/OrderedBranchLaws
   structural_factoring/TreeFactor
-  converter_guarantees/CorrectnessCompletion converter_guarantees/RankBoxProgress
+  converter_guarantees/CorrectnessCompletion converter_guarantees/DomainPartitions
   converter_guarantees/SizeBounds converter_guarantees/GraftBounds
   converter_guarantees/SharedDecisionDAG converter_guarantees/DecisionEquations
   converter_guarantees/OnlineArenaContracts converter_guarantees/CollectedRoots
   converter_guarantees/SignatureEnumeration converter_guarantees/MixedRadixCoverage
-  converter_guarantees/StreamingGridFold converter_guarantees/RankSourceCorrespondence
-  converter_guarantees/ConcreteConstruction converter_guarantees/ForestRankInstance
   converter_guarantees/ApplicabilityCache converter_guarantees/HardAxisRewrites
   converter_guarantees/HardRewriteExhaustion converter_guarantees/OrderedArithmetic
-  converter_guarantees/PairedBounds)
-file(SHA256 "${DP_PROOF_SOURCE_ROOT}/dynamic_atom_restriction/DynamicAtomRestriction.lean" dp_dynamic_hash)
-foreach(dp_duplicate adjacent_predicate_bypass literal_path_bound)
-  file(SHA256 "${DP_PROOF_SOURCE_ROOT}/${dp_duplicate}/DynamicAtomRestriction.lean" dp_duplicate_hash)
-  if(NOT dp_duplicate_hash STREQUAL dp_dynamic_hash)
-    message(FATAL_ERROR "Duplicate DynamicAtomRestriction sources differ")
-  endif()
-endforeach()
+  converter_guarantees/PairedBounds converter_guarantees/RelationalMargins
+  converter_guarantees/GroupedMargins converter_guarantees/NativeClassSeparation)
 string(RANDOM LENGTH 16 ALPHABET 0123456789abcdef dp_run_id)
 set(dp_output "${DP_PROOF_OUTPUT_ROOT}/${dp_run_id}")
 file(MAKE_DIRECTORY "${dp_output}/modules" "${dp_output}/logs")

@@ -1,5 +1,6 @@
 #pragma once
 #include "adaptive_domain.cuh"
+#include "../class_native_softprob_contract.hpp"
 #include "adaptive_growth_plan.hpp"
 #include <cuda_runtime.h>
 #include <algorithm>
@@ -11,6 +12,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace class_conversion_adaptive::cover { struct PointScreen; }
 
 // The maintained converter's adaptive construction. Host work owns opaque
 // transport, capacities and callback scheduling; all model decisions are CUDA.
@@ -127,6 +130,9 @@ struct SourceView {
   const float *cut, *value, *bias;
   const std::uint8_t* missing;
   u32 features, classes, nodes, trees;
+  // Zero audits every channel. Mixed sources append exact structural guards
+  // after this native margin prefix; they are never passed to native models.
+  u32 native_margin_classes = 0;
 };
 struct State {
   u32 phase = 0, predicate = none, left = none, right = none, node = none;
@@ -179,7 +185,35 @@ struct EngineView {
   Status* status;
   u32 refinement_stack_capacity = 0;
   u32 refinement_maximum_visits = 0;
+  // Joint residual bounds share the caller's dynamic traversal budget.
+  u32 joint_pair_visit_budget = 0;
+  bool rival_cover_enabled = false;
+  bool relational_bounds_enabled = false;
+  bool unary_bounds_enabled = false;
+  // Disposable, private per-worker certificates and axis atoms; never persisted.
+  u32 *unary_axes=nullptr,*unary_minimum=nullptr,*unary_maximum=nullptr,*unary_cuts=nullptr,*unary_order=nullptr;
+  u32 unary_cut_capacity=0;
+  double* unary_first=nullptr;u32 unary_first_capacity=0;
+  // Score storage remains source.classes wide. A composed source can have
+  // several independent teacher score vectors but fewer public class labels.
+  // Zero preserves the established single-source behavior for all callers.
+  u32 output_classes = 0;
+  // PRIVATE negative screen, with exclusive disposable worker counters.
+  bool two_point_screen_enabled=true;
+  cover::PointScreen* point_screen=nullptr;
 };
+__host__ __device__ inline u32 unary_cut_words(const EngineView& e) {
+  // Resource-derived scratch extent. Exhaustion loses an optional proof only.
+  const u32 extent=e.source.trees>e.refinement_stack_capacity?e.source.trees:e.refinement_stack_capacity;
+  return e.unary_bounds_enabled?(e.source.nodes<extent?e.source.nodes:extent):0;
+}
+__host__ __device__ inline u32 unary_probe_entries(const EngineView& e) {
+  const u64 axes=u64(e.domain.numeric_features)+e.domain.groups;
+  return e.unary_bounds_enabled?(e.source.trees<axes?e.source.trees:u32(axes)):0;
+}
+__host__ __device__ inline u32 output_class_count(const EngineView& e) {
+  return e.output_classes ? e.output_classes : e.source.classes;
+}
 __device__ domain::RegionView region(const EngineView& e, u32 id) {
   u64 offset = u64(id) * e.domain.numeric_features;
   return {e.domain.numeric_features ? e.arena.lower + offset : nullptr,
@@ -530,18 +564,30 @@ __device__ bool evict_completed_state(EngineView e, u32 id) {
   e.status->free_head = id; ++e.status->free_count; ++e.status->state_evictions;
   return true;
 }
-__global__ void initialize(EngineView e) {
-  if (blockIdx.x || threadIdx.x) return;
+__device__ void initialize_impl(EngineView e, domain::RegionView requested, bool restricted) {
   *e.status = Status{};
   for (u32 i = 0; i < e.source.nodes; ++i) {
     bool leaf = e.source.left[i] < 0;
     if ((leaf && !isfinite(e.source.value[i])) ||
-        (!leaf && (!isfinite(e.source.cut[i]) || e.source.feature[i] < 0 ||
+        (!leaf && (isnan(e.source.cut[i]) || e.source.feature[i] < 0 ||
                    u32(e.source.feature[i]) >= e.source.features))) {
       e.status->error = 1; return;
     }
   }
   if (!domain::initial_domain(e.domain, e.draft_witness)) { e.status->error = 2; return; }
+  if (restricted) {
+    if (!domain::region_valid(e.domain, requested)) { e.status->error = 2; return; }
+    for (u32 f = 0; f < e.domain.numeric_features; ++f) {
+      if ((requested.missing[f] && !e.draft_witness.missing[f]) ||
+          (domain::finite_nonempty(requested.lower[f], requested.upper[f]) &&
+           (requested.lower[f] < e.draft_witness.lower[f] || requested.upper[f] > e.draft_witness.upper[f]))) {
+        e.status->error = 2; return;
+      }
+    }
+    for (u32 w = 0; w < e.domain.mask_words; ++w)
+      if (requested.allowed[w] & ~e.draft_witness.allowed[w]) { e.status->error = 2; return; }
+    copy_region(e, e.draft_witness, requested);
+  }
   copy_region(e, e.draft_region, e.draft_witness);
   for (u32 c = 0; c < e.source.classes; ++c) {
     e.draft_words[c] = __float_as_uint(e.source.bias[c]); e.draft_positions[c] = 0;
@@ -553,6 +599,14 @@ __global__ void initialize(EngineView e) {
   u32 id = intern_state(e, s, e.draft_region, e.draft_words, e.draft_positions, e.draft_residual);
   if (e.status->error || id == none) return;
   e.arena.stack[0] = id; e.status->depth = 1;
+}
+__global__ void initialize(EngineView e) {
+  if (!blockIdx.x && !threadIdx.x) initialize_impl(e, {}, false);
+}
+// Restricted-domain studies use the identical normalizer, state interning and
+// frontier. Supplied regions must be subsets of the declared initial domain.
+__global__ void initialize_region(EngineView e, domain::RegionView requested) {
+  if (!blockIdx.x && !threadIdx.x) initialize_impl(e, requested, true);
 }
 // The existing adaptive4 unconditional subtree enclosure. Context restriction
 // only removes leaves, so these extrema remain conservative in every state.
@@ -593,13 +647,16 @@ __global__ void subtree_extrema(SourceView v, u32* minimum, u32* maximum, u32* s
 struct ConditionedExtrema {
   u32 minimum = 0, maximum = 0;
   u32 visited = 0, fallbacks = 0;
+  u32 axis = none; // only a complete walk may certify unary dependence
+  u32 first_unforced = none; // optional split proposal; never certificate authority
 };
 __device__ ConditionedExtrema conditioned_subtree_extrema(
     EngineView e, domain::RegionView r, u32 root, u32* private_stack,
-    u32 stack_capacity, u32 visit_budget) {
+    u32 stack_capacity, u32 visit_budget, bool classify_axis=false, bool propose_split=false) {
   ConditionedExtrema out{e.minimum[root], e.maximum[root], 0, 0};
   if (!stack_capacity || !visit_budget) { out.fallbacks = 1; return out; }
   u32 pending = 1; private_stack[0] = root; bool collected = false;
+  u32 axis=none; bool multiple_axes=false;
   auto absorb = [&](u32 node) {
     if (!collected) {
       out.minimum = e.minimum[node]; out.maximum = e.maximum[node];
@@ -619,28 +676,47 @@ __device__ ConditionedExtrema conditioned_subtree_extrema(
     if (domain::forced_side(e.domain, r, u32(e.source.feature[node]),
           __float_as_uint(e.source.cut[node]), bool(e.source.missing[node]), right)) {
       private_stack[pending++] = u32(right ? e.source.right[node] : e.source.left[node]);
-    } else if (stack_capacity - pending >= 2) {
-      private_stack[pending++] = u32(e.source.left[node]);
-      private_stack[pending++] = u32(e.source.right[node]);
-    } else { absorb(node); ++out.fallbacks; }
+    } else {
+      if(propose_split&&out.first_unforced==none)out.first_unforced=node;
+      if(classify_axis) {
+        const u32 f=u32(e.source.feature[node]);
+        const auto group=e.domain.feature_group[f];
+        const auto numeric=e.domain.feature_numeric[f];
+        const u32 current=group>=0?e.domain.numeric_features+u32(group):
+            (numeric>=0?u32(numeric):none);
+        if(current==none||(axis!=none&&axis!=current))multiple_axes=true;
+        if(axis==none)axis=current;
+      }
+      if(stack_capacity-pending>=2) {
+        private_stack[pending++]=u32(e.source.left[node]);
+        private_stack[pending++]=u32(e.source.right[node]);
+      } else { absorb(node); ++out.fallbacks; }
+    }
   }
   while (pending) { absorb(private_stack[--pending]); ++out.fallbacks; }
+  if(classify_axis&&!out.fallbacks&&!multiple_axes)out.axis=axis;
   return out;
 }
 __device__ int qualified_range_label(EngineView e) {
-  if (!e.qualified_gap) return -1;
+  static_assert(native_softprob_gap::computed_gap_minimum > 0,
+                "maximum-candidate proof requires a positive gap");
+  if (!e.qualified_gap || !e.source.classes) return -1;
+  u32 winner = 0;
+  float largest_lower = 0.f;
   for (u32 c = 0; c < e.source.classes; ++c) {
-    float lo = e.range_lower[c], hi = e.range_upper[c];
+    const float lo = e.range_lower[c], hi = e.range_upper[c];
     if (!isfinite(lo) || !isfinite(hi) || lo > hi || lo < -10.f || hi > 10.f) return -1;
+    if (!c || lo > largest_lower) { winner = c; largest_lower = lo; }
   }
-  for (u32 winner = 0; winner < e.source.classes; ++winner) {
-    bool wins = true;
-    for (u32 c = 0; c < e.source.classes; ++c) if (c != winner)
-      if (__dsub_rn(double(e.range_lower[winner]), double(e.range_upper[c])) < 0x1p-10)
-        wins = false;
-    if (wins) return int(winner);
-  }
-  return -1;
+  if (e.source.classes == 1) return int(winner);
+  // A positive qualifying gap forces a unique maximum lower bound. For that
+  // candidate, monotonic RN64 subtraction reduces all rival checks to the
+  // largest competing upper bound; the winner's own upper is excluded.
+  float largest_upper = -INFINITY;
+  for (u32 c = 0; c < e.source.classes; ++c) if (c != winner)
+    if (e.range_upper[c] > largest_upper) largest_upper = e.range_upper[c];
+  return __dsub_rn(double(largest_lower), double(largest_upper)) <
+    native_softprob_gap::computed_gap_minimum ? -1 : int(winner);
 }
 __device__ int qualified_interval_label(EngineView e, u32 id) {
   if (!e.qualified_gap) return -1;

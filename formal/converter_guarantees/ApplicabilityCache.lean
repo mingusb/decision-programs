@@ -1,4 +1,6 @@
 import SharedDecisionDAG
+import CoverRefinement
+import SignatureEnumeration
 
 /-!
 Residual-source applicability cache. No hash is treated as equality and no
@@ -8,7 +10,7 @@ original order are retained under a fixed deterministic native transform.
 namespace ConverterApplicabilityCache
 open ConverterGuarantees ConverterSharedDAG
 
-variable {P W L X V : Type}
+variable {P W L X V Axis : Type}
 
 def residualize (forced : P → Option Bool) : Tree P W → Tree P W
   | .leaf w => .leaf w
@@ -120,26 +122,26 @@ theorem donor_only_certificate_insufficient :
   · intro x hx; exact hx.symm
   · intro h; have hf := h true rfl; cases hf
 
-/-- Twelve independent product coordinates model ten rank axes plus exactly
-    one wilderness index and one soil index. The latter have finite set domains. -/
-abbrev ProductCell := Fin 12 → Nat
-abbrev ProductDomain := Fin 12 → Nat → Prop
-abbrev ActiveMask := Fin 12 → Bool
+/-- Independent semantic coordinates include numeric ranks and categorical
+    states. The argument does not require a fixed coordinate count. -/
+abbrev ProductCell (Axis : Type) := Axis → Nat
+abbrev ProductDomain (Axis : Type) := Axis → Nat → Prop
+abbrev ActiveMask (Axis : Type) := Axis → Bool
 
-def productMem (domain : ProductDomain) (x : ProductCell) : Prop :=
+def productMem (domain : ProductDomain Axis) (x : ProductCell Axis) : Prop :=
   ∀ i, domain i (x i)
 
-def activeView (active : ActiveMask) (x : ProductCell) : Fin 12 → Nat :=
+def activeView (active : ActiveMask Axis) (x : ProductCell Axis) : Axis → Nat :=
   fun i => if active i then x i else 0
 
-def activeGuard (domain : ProductDomain) (active : ActiveMask) (x : ProductCell) : Prop :=
+def activeGuard (domain : ProductDomain Axis) (active : ActiveMask Axis) (x : ProductCell Axis) : Prop :=
   ∀ i, active i = true → domain i (x i)
 
-def splice (active : ActiveMask) (x witness : ProductCell) : ProductCell :=
+def splice (active : ActiveMask Axis) (x witness : ProductCell Axis) : ProductCell Axis :=
   fun i => if active i then x i else witness i
 
-theorem splice_in_donor (domain : ProductDomain) (active : ActiveMask)
-    (witness x : ProductCell) (nonempty : productMem domain witness)
+theorem splice_in_donor (domain : ProductDomain Axis) (active : ActiveMask Axis)
+    (witness x : ProductCell Axis) (nonempty : productMem domain witness)
     (guard : activeGuard domain active x) :
     productMem domain (splice active x witness) := by
   intro i
@@ -147,14 +149,14 @@ theorem splice_in_donor (domain : ProductDomain) (active : ActiveMask)
   · simpa [splice,h] using nonempty i
   · simpa [splice,h] using guard i h
 
-theorem splice_same_active (active : ActiveMask) (witness x : ProductCell) :
+theorem splice_same_active (active : ActiveMask Axis) (witness x : ProductCell Axis) :
     activeView active (splice active x witness) = activeView active x := by
   funext i
   cases h : active i <;> simp [activeView,splice,h]
 
-theorem guard_covers_projection (domain : ProductDomain) (active : ActiveMask)
-    (witness : ProductCell) (nonempty : productMem domain witness)
-    (target : ProductCell → Prop)
+theorem guard_covers_projection (domain : ProductDomain Axis) (active : ActiveMask Axis)
+    (witness : ProductCell Axis) (nonempty : productMem domain witness)
+    (target : ProductCell Axis → Prop)
     (guard : ∀ x, target x → activeGuard domain active x) :
     ProjectionCover (activeView active) (productMem domain) target := by
   intro x hx
@@ -162,11 +164,11 @@ theorem guard_covers_projection (domain : ProductDomain) (active : ActiveMask)
     splice_in_donor domain active witness x nonempty (guard x hx),
     splice_same_active active witness x⟩
 
-/-- Constant-size coordinate inclusion suffices; no donor tree expansion. -/
-def guardIncludes (old current : ProductDomain) (active : ActiveMask) : Prop :=
+/-- Coordinate inclusion suffices; no donor tree expansion. -/
+def guardIncludes (old current : ProductDomain Axis) (active : ActiveMask Axis) : Prop :=
   ∀ i, active i = true → ∀ value, current i value → old i value
 
-theorem coordinate_inclusion_guard (old current : ProductDomain) (active : ActiveMask)
+theorem coordinate_inclusion_guard (old current : ProductDomain Axis) (active : ActiveMask Axis)
     (inc : guardIncludes old current active) :
     ∀ x, productMem current x → activeGuard old active x := by
   intro x hx i hi
@@ -180,9 +182,9 @@ theorem numeric_interval_inclusion (oldLo oldHi newLo newHi value : Nat)
 theorem category_set_inclusion (old current : List Nat) (inc : current ⊆ old)
     (value : Nat) (inside : value ∈ current) : value ∈ old := inc inside
 
-theorem product_guard_current_source_reuse (old current : ProductDomain)
-    (active : ActiveMask) (witness : ProductCell) (nonempty : productMem old witness)
-    (module residual source : ProductCell → L)
+theorem product_guard_current_source_reuse (old current : ProductDomain Axis)
+    (active : ActiveMask Axis) (witness : ProductCell Axis) (nonempty : productMem old witness)
+    (module residual source : ProductCell Axis → L)
     (md : DependsOn (activeView active) module)
     (rd : DependsOn (activeView active) residual)
     (cert : ∀ y, productMem old y → module y = residual y)
@@ -205,26 +207,15 @@ theorem shared_module_reuse (g : DAG P L) (root : Fin g.size) (truth : P → X �
     ∀ x, target x → route g truth root x = source x :=
   current_source_reuse view donor target (route g truth root) residual source md rd cert cover fresh
 
-def predicates : Tree P W → List P
-  | .leaf _ => []
-  | .branch p a b => p :: (predicates a ++ predicates b)
+/-- Share the source-question inventory with signature enumeration. -/
+abbrev predicates (tree : Tree P W) : List P :=
+  ConverterSignatureEnumeration.predicates tree
 
 theorem evaluation_of_predicate_agreement (truth : P → X → Bool)
     (tree : Tree P W) (x y : X)
     (agree : ∀ p ∈ predicates tree, truth p x = truth p y) :
-    eval truth tree x = eval truth tree y := by
-  induction tree with
-  | leaf _ => rfl
-  | branch p a b ia ib =>
-    have hp := agree p (by simp [predicates])
-    have ha : ∀ q ∈ predicates a, truth q x = truth q y := by
-      intro q hq; exact agree q (by simp [predicates,hq])
-    have hb : ∀ q ∈ predicates b, truth q x = truth q y := by
-      intro q hq; exact agree q (by simp [predicates,hq])
-    simp only [eval,hp]
-    split
-    · exact ia ha
-    · exact ib hb
+    eval truth tree x = eval truth tree y :=
+  ConverterSignatureEnumeration.same_questions_same_leaf truth tree x y agree
 
 theorem tree_dependency_from_syntactic_predicates (truth : P → X → Bool)
     (view : X → V) (tree : Tree P W)
@@ -278,5 +269,122 @@ theorem expanded_shared_module_reuse (g : DAG P L) (root : Fin g.size)
   apply freshly_expanded_guard_reuse (route g truth root) source expanded target
   · exact represented_source_correct g truth source expanded rep fresh
   · exact contained
+
+/-- Logical work lists for the existing bounded walk: absorbed subtrees and
+pending subtrees. These are not a second source-tree representation. -/
+abbrev FrontierState (P W : Type) := List (Tree P W) × List (Tree P W)
+
+def FrontierCovers (truth : P → X → Bool) (region : X → Prop)
+    (root : Tree P W) (state : FrontierState P W) : Prop :=
+  ∀ x, region x → ∃ tree ∈ state.1 ++ state.2, eval truth tree x = eval truth root x
+
+/-- Absorb covers a leaf or an entire unexpanded subtree. Forced decisions
+refer to the immutable original region; unrestricted splits retain both sides.
+Budget exhaustion performs only absorb steps, never discards a pending tree.
+The pending list is stack-top first: pushing yes then no puts no first. The
+runtime right flag maps to forced p = some (!right). Logical transitions are
+not node-visit counts: draining and the zero-budget fallback add no visits. -/
+inductive FrontierStep (forced : P → Option Bool) :
+    FrontierState P W → FrontierState P W → Prop where
+  | absorb (tree : Tree P W) (done todo : List (Tree P W)) :
+      FrontierStep forced (done, tree :: todo) (tree :: done, todo)
+  | forced (p : P) (yes no : Tree P W) (side : Bool)
+      (done todo : List (Tree P W)) (decided : forced p = some side) :
+      FrontierStep forced (done, .branch p yes no :: todo)
+        (done, (if side then yes else no) :: todo)
+  | split (p : P) (yes no : Tree P W) (done todo : List (Tree P W)) :
+      FrontierStep forced (done, .branch p yes no :: todo) (done, no :: yes :: todo)
+
+theorem frontier_start (truth : P → X → Bool) (region : X → Prop)
+    (root : Tree P W) : FrontierCovers truth region root ([], [root]) := by
+  intro x _
+  exact ⟨root, by simp, rfl⟩
+
+theorem frontier_step_covers (truth : P → X → Bool) (region : X → Prop)
+    (forced : P → Option Bool) (sound : ForcedSound truth region forced)
+    (root : Tree P W) (step : FrontierStep forced before after)
+    (covered : FrontierCovers truth region root before) :
+    FrontierCovers truth region root after := by
+  intro x hx
+  obtain ⟨tree, member, value⟩ := covered x hx
+  cases step with
+  | absorb node done todo =>
+      exact ⟨tree, by simpa only [List.mem_append, List.mem_cons, or_assoc,
+        or_comm, or_left_comm] using member, value⟩
+  | forced p yes no side done todo decided =>
+      simp only [List.mem_append, List.mem_cons] at member
+      rcases member with hd | equal | ht
+      · exact ⟨tree, List.mem_append.mpr (Or.inl hd), value⟩
+      · subst tree
+        refine ⟨if side then yes else no, by simp, ?_⟩
+        have hp := sound p side decided x hx
+        cases side <;> simpa [eval, hp] using value
+      · exact ⟨tree, by simp [ht], value⟩
+  | split p yes no done todo =>
+      simp only [List.mem_append, List.mem_cons] at member
+      rcases member with hd | equal | ht
+      · exact ⟨tree, List.mem_append.mpr (Or.inl hd), value⟩
+      · subst tree
+        cases hp : truth p x with
+        | false => exact ⟨no, by simp, by simpa [eval, hp] using value⟩
+        | true => exact ⟨yes, by simp, by simpa [eval, hp] using value⟩
+      · exact ⟨tree, by simp [ht], value⟩
+
+theorem frontier_run_covers (truth : P → X → Bool) (region : X → Prop)
+    (forced : P → Option Bool) (sound : ForcedSound truth region forced)
+    (root : Tree P W) (path : Executes (FrontierStep forced) n before after)
+    (covered : FrontierCovers truth region root before) :
+    FrontierCovers truth region root after := by
+  induction path with
+  | zero => exact covered
+  | next step tail ih =>
+      exact ih (frontier_step_covers truth region forced sound root step covered)
+
+/-- Draining includes every queued subtree; list order does not affect cover
+membership. The runtime may absorb in any stack order. -/
+theorem frontier_drain_covers (truth : P → X → Bool) (region : X → Prop)
+    (root : Tree P W) (state : FrontierState P W)
+    (covered : FrontierCovers truth region root state) :
+    FrontierCovers truth region root (state.1 ++ state.2, []) := by
+  simpa only [FrontierCovers, List.append_nil] using covered
+
+/-- Bounded traversal derives its cover instead of assuming it. Apply with
+the reversed order for upper bounds. Admitted static subtree bounds, the
+aggregate floor relation, sound forced decisions, and the transition trace
+are explicit premises; budgets need
+not finish leaf enumeration. This does not prove CUDA memory/loop refinement. -/
+theorem frontier_floor_sound (truth : P → X → Bool) (region : X → Prop)
+    (forced : P → Option Bool) (sound : ForcedSound truth region forced)
+    (root : Tree P W) (state : FrontierState P W)
+    (path : Executes (FrontierStep forced) n ([], [root]) state)
+    (le : W → W → Prop) (trans : ∀ {a b c}, le a b → le b c → le a c)
+    (lower : Tree P W → W) (floor : W)
+    (staticBound : ∀ tree ∈ state.1 ++ state.2,
+      ∀ x, region x → le (lower tree) (eval truth tree x))
+    (absorbedFloor : ∀ tree ∈ state.1 ++ state.2, le floor (lower tree)) :
+    CoverRefinement.LowerCert le region (eval truth root) floor := by
+  have covered := frontier_run_covers truth region forced sound root path
+    (frontier_start truth region root)
+  let Case := {tree : Tree P W // tree ∈ state.1 ++ state.2}
+  let part : Case → X → Prop := fun tree x => eval truth tree.val x = eval truth root x
+  have cover : CoverRefinement.Cover le region part (eval truth root)
+      (fun tree : Case => lower tree.val) := by
+    constructor
+    · intro x hx
+      obtain ⟨tree, member, value⟩ := covered x hx
+      exact ⟨⟨tree, member⟩, value⟩
+    · intro tree x hx same
+      rw [← same]
+      exact staticBound tree.val tree.property x hx
+  have belowCases : ∀ tree : Case, le floor (lower tree.val) :=
+    fun tree => absorbedFloor tree.val tree.property
+  exact CoverRefinement.exhaustive_cover_floor_sound (le := le) (floor := floor)
+    (bound := fun tree : Case => lower tree.val) trans cover belowCases
+
+#print axioms frontier_start
+#print axioms frontier_step_covers
+#print axioms frontier_run_covers
+#print axioms frontier_drain_covers
+#print axioms frontier_floor_sound
 
 end ConverterApplicabilityCache

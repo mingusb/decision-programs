@@ -1,10 +1,10 @@
 import CorrectnessCompletion
-import RankBoxProgress
+import DomainPartitions
 
 /- Finite complete source-question signatures. Numerical instruction refinement
 and native deterministic transform identity are separate implementation duties. -/
 namespace ConverterSignatureEnumeration
-open ConverterGuarantees ConverterRankBox
+open ConverterGuarantees ConverterDomain
 variable {P W L X : Type}
 
 def predicates : Tree P W → List P

@@ -64,7 +64,7 @@ __host__ __device__ u64 mask(u32 b) { return (u64(1) << b) - 1; }
 __device__ bool valid_node(Node v, u32 i, u32 F, u32 K) {
   if (v.feature == -1) return v.payload < K && v.left == 0 && v.right == 0;
   std::int64_t f = v.feature >= 0 ? v.feature : -std::int64_t(v.feature) - 2;
-  return f >= 0 && u64(f) < F && isfinite(__uint_as_float(v.payload)) && v.left < i && v.right < i && v.left != v.right;
+  return f >= 0 && u64(f) < F && !isnan(__uint_as_float(v.payload)) && v.left < i && v.right < i && v.left != v.right;
 }
 __global__ void validate_canonical(const Node* nodes, u32 count, u32 F, u32 K, u32* bad) {
   for (u64 i = u64(blockIdx.x) * blockDim.x + threadIdx.x; i < count; i += u64(blockDim.x) * gridDim.x)
@@ -101,7 +101,7 @@ __global__ void validate_compact(const Node* nodes, const u64* words, const u64*
   for (u64 i = u64(blockIdx.x) * blockDim.x + threadIdx.x; i < nd; i += u64(blockDim.x) * gridDim.x) {
     const u64 key = dict[i]; const std::int32_t sf = std::int32_t(u32(key >> 32));
     const std::int64_t f = sf >= 0 ? sf : -std::int64_t(sf)-2;
-    if (sf == -1 || f < 0 || u64(f) >= F || !isfinite(__uint_as_float(u32(key))) || (i && dict[i-1] >= key)) atomicOr(bad,1u);
+    if (sf == -1 || f < 0 || u64(f) >= F || isnan(__uint_as_float(u32(key))) || (i && dict[i-1] >= key)) atomicOr(bad,1u);
   }
 }
 struct Validated { const Node* nodes; const u64* words; const u64* dict; u32 count, root, F, K, nd, cb, pb; };

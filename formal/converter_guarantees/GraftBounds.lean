@@ -8,6 +8,7 @@ certification, and rank-word predicate refinement are separate obligations.
 -/
 namespace ConverterGraft
 open ConverterSize
+open ConverterGuarantees (mass frontierPotential potential_append leaf_mass_positive)
 
 def cells : List Nat → Nat
   | [] => 0
@@ -30,7 +31,7 @@ theorem completed_graft_exact_saving (c v k : Nat) (pre post : List Nat)
     (hk : 0 < k) (hkv : k ≤ v) :
     budget (c + physical k) (pre ++ post) + 2*(v-k) =
       budget c (pre ++ v :: post) := by
-  simp only [budget, potential_append, potential, weight, physical]
+  simp only [budget, potential_append, frontierPotential, mass, physical]
   omega
 
 theorem completed_graft_budget_monotone (c v k : Nat) (pre post : List Nat)
@@ -41,15 +42,15 @@ theorem completed_graft_budget_monotone (c v k : Nat) (pre post : List Nat)
 
 theorem completed_graft_commits_bounded (c v k : Nat) (pre post : List Nat)
     (hk : 0 < k) (hkv : k ≤ v) :
-    physical k + potential (pre ++ post) ≤ potential (pre ++ v :: post) := by
+    physical k + frontierPotential (pre ++ post) ≤ frontierPotential (pre ++ v :: post) := by
   have h := completed_graft_budget_monotone c v k pre post hk hkv
   unfold budget at h
   omega
 
 theorem completed_graft_decreases_pending (v : Nat) (pre post : List Nat)
-    (hv : 0 < v) : potential (pre ++ post) < potential (pre ++ v :: post) := by
-  have hm := positive_weight v hv
-  simp only [potential_append, potential]
+    (hv : 0 < v) : frontierPotential (pre ++ post) < frontierPotential (pre ++ v :: post) := by
+  have hm := leaf_mass_positive v hv
+  simp only [potential_append, frontierPotential]
   omega
 
 theorem two_leaf_stump_exact_saving (c v : Nat) (pre post : List Nat)

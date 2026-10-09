@@ -168,6 +168,50 @@ theorem strict_winner_selected (score : Nat → Int) (incumbent winner : Nat) (r
   · have hu := unique _ hm h
     omega
 
+private theorem first_max_append (score : Nat → Int) (left right : List Nat) :
+    ∀ incumbent, firstMaxFrom score incumbent (left ++ right) =
+      firstMaxFrom score (firstMaxFrom score incumbent left) right := by
+  induction left with
+  | nil => intro incumbent; rfl
+  | cons candidate left ih =>
+      intro incumbent
+      simp only [List.cons_append, firstMaxFrom]
+      exact ih _
+
+/-- Finite ordered margin enclosures certify the lowest-index maximum: earlier
+    rivals require strict separation, later rivals may tie. Int encodings exclude
+    NaN/infinity; native use additionally requires the source/rounder correspondence.
+    The ascending scan starts at class zero, so `inside` also ensures nonemptiness. -/
+theorem interval_first_winner_selected (lo actual hi : Nat → Int) (winner count : Nat)
+    (inside : winner < count)
+    (bounds : ∀ c, c < count → lo c ≤ actual c ∧ actual c ≤ hi c)
+    (earlier : ∀ c, c < winner → hi c < lo winner)
+    (later : ∀ c, winner < c → c < count → hi c ≤ lo winner) :
+    firstMaxFrom actual 0 (List.range count) = winner := by
+  induction count generalizing winner with
+  | zero => omega
+  | succ n ih =>
+      rw [List.range_succ, first_max_append]
+      by_cases hw : winner < n
+      · rw [ih winner hw (fun c hc => bounds c (by omega)) earlier
+          (fun c hwc hc => later c hwc (by omega))]
+        have hn := bounds n (by omega)
+        have hwin := bounds winner inside
+        have hl := later n hw (by omega)
+        simp [firstMaxFrom, show ¬actual winner < actual n by omega]
+      · have heq : winner = n := by omega
+        subst winner
+        by_cases hn : n = 0
+        · subst n; simp [firstMaxFrom]
+        · have member := first_max_member actual (List.range n) 0
+          have hc : firstMaxFrom actual 0 (List.range n) < n := by
+            simp only [List.mem_cons, List.mem_range] at member
+            omega
+          have hb := bounds _ (by omega : firstMaxFrom actual 0 (List.range n) < n + 1)
+          have hwin := bounds n inside
+          have he := earlier _ hc
+          simp [firstMaxFrom, show actual (firstMaxFrom actual 0 (List.range n)) < actual n by omega]
+
 /-- Exact integer distance; finite binary floating values can be scaled to
     integers by the common smallest-subnormal unit. -/
 def distance (x y : Int) : Int := if x < y then y-x else x-y
@@ -224,5 +268,6 @@ theorem nearest_ordered_reduction_encloses (representable : Int → Prop) (round
 #print axioms first_max_member
 #print axioms first_max_score
 #print axioms first_max_keeps_incumbent_on_ties
+#print axioms interval_first_winner_selected
 #print axioms strict_winner_selected
 end ConverterArithmetic

@@ -71,7 +71,8 @@ class Runtime final {
               std::uint64_t expected_elements,
               std::uint32_t block_size = 256) const;
   // Byte transport only; packing is performed on CUDA. This format retains
-  // threshold bit patterns, signed missing direction, children and class IDs.
+  // threshold bit patterns (including +/-infinity), signed missing direction,
+  // children and class IDs. Infinite model cuts do not expand the input domain.
   std::string compact_bytes() const;
  private:
   struct Impl;

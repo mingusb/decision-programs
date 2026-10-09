@@ -115,6 +115,40 @@ class CliChecks(unittest.TestCase):
         self.assertEqual(result["command"][1], str(self.source))
         self.assertFalse((self.root / "injected").exists())
 
+    def test_optional_bounds_are_explicit_and_conflicting_flags_are_refused(self):
+        options_file = self.root / "proof-options.json"
+        args = ("convert", "--model", self.source, "--out", self.root / "proof-output")
+
+        def settings(*extra):
+            return self.dry(*args, *extra)["generated_inputs"]["plan.json"]
+
+        default = settings()
+        for key in ("joint_bounds", "rival_covers", "relational_bounds", "unary_bounds"):
+            self.assertNotIn(key, default)  # Omitted settings use backend defaults.
+        for name in ("relational", "unary"):
+            key = name + "_bounds"
+            enable, disable = "--" + name + "-bounds", "--no-" + name + "-bounds"
+            for flag, enabled in ((enable, True), (disable, False)):
+                explicit = settings(flag)
+                self.assertEqual(explicit[key], enabled)
+                self.assertNotIn("joint_bounds", explicit)
+                self.assertNotIn("rival_covers", explicit)
+                options_file.write_text(json.dumps({key: not enabled}))
+                self.assertEqual(settings("--options", options_file)[key], not enabled)
+                self.assertEqual(settings("--options", options_file, flag)[key], enabled)
+            for flags in ((enable, disable), (disable, enable)):
+                refused = self.call(*args, *flags, "--dry-run", status=2)
+                self.assertIn(enable + " and " + disable + " cannot be combined", refused.stderr)
+        separate = self.dry("convert", "--model", self.source, "--out", self.root / "separate",
+                            "--no-joint-bounds", "--no-rival-covers", "--relational-bounds")
+        plan = separate["generated_inputs"]["plan.json"]
+        self.assertFalse(plan["joint_bounds"])
+        self.assertFalse(plan["rival_covers"])
+        self.assertTrue(plan["relational_bounds"])
+        self.assertIn("relational bounds default off", self.call("convert", "--help").stdout)
+        self.assertIn("grouped unary bounds default off", self.call("convert", "--help").stdout)
+        self.assertFalse((self.root / "proof-output").exists())
+
     def test_csv_training_cache_and_saved_plan_are_stable(self):
         saved = self.root / "saved.json"
         args = ("train", "--data", self.csv, "--target", "label", "--output", self.root / "trained")

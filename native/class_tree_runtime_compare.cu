@@ -43,7 +43,7 @@ __global__ void original_classes(const unsigned char* b,W count,W F,W K,
       W cut=W(word(b,40+4*U(count)+4*id,4));
       W missing=W(word(b,40+8*U(count)+id,1));
       U left=word(b,40+9*U(count)+8*id,8),right=word(b,40+17*U(count)+8*id,8);
-      if(label!=-1||f<0||W(f)>=F||missing>1||!isfinite(__uint_as_float(cut))||left>=count||right>=count||left==right){atomicExch(bad,5U);break;}
+      if(label!=-1||f<0||W(f)>=F||missing>1||isnan(__uint_as_float(cut))||left>=count||right>=count||left==right){atomicExch(bad,5U);break;}
       float value=x[r*U(F)+W(f)];id=(isnan(value)?bool(missing):value<__uint_as_float(cut))?left:right;
     }
     if(answer==UINT32_MAX)atomicExch(bad,6U);out[r]=answer;

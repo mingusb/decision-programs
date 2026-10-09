@@ -13,6 +13,14 @@ int main() {
       expect(automatic.draft_threads==0);
       expect(automatic.split_policy=="source_order");
       expect(automatic.oldest_ready_jobs==0);
+      expect(automatic.joint_bounds&&automatic.rival_covers&&!automatic.relational_bounds&&!automatic.unary_bounds);
+      auto defaults=class_study::parse_conversion_options(class_study::describe_conversion_options(automatic),features);
+      expect(defaults.joint_bounds&&defaults.rival_covers&&!defaults.relational_bounds&&!defaults.unary_bounds);
+      for(bool joint:{false,true})for(bool rivals:{false,true})for(bool relational:{false,true})for(bool unary:{false,true}) {
+        auto choice=class_study::parse_conversion_options(J{{"joint_bounds",joint},{"rival_covers",rivals},{"relational_bounds",relational},{"unary_bounds",unary}},features);
+        auto restored=class_study::parse_conversion_options(class_study::describe_conversion_options(choice),features);
+        expect(restored.joint_bounds==joint&&restored.rival_covers==rivals&&restored.relational_bounds==relational&&restored.unary_bounds==unary);
+      }
       for(std::uint32_t count:{0u,1u,256u,UINT32_MAX}) {
         auto choice=class_study::parse_conversion_options(J{{"oldest_ready_jobs",count}},features);
         expect(choice.oldest_ready_jobs==count);
@@ -67,6 +75,9 @@ int main() {
       expect(refused);
     }
     for(const char*key:{"completed_cache_limit","refinement_visit_budget","oldest_ready_jobs"})for(const auto&bad:{J(-1),J(1.5),J(true),J("auto"),J(4294967296ull)}){
+      bool refused=false;try{(void)class_study::parse_conversion_options(J{{key,bad}},13);}catch(const std::invalid_argument&){refused=true;}expect(refused);
+    }
+    for(const char*key:{"joint_bounds","rival_covers","relational_bounds","unary_bounds"})for(const auto&bad:{J(nullptr),J(0),J("false")}){
       bool refused=false;try{(void)class_study::parse_conversion_options(J{{key,bad}},13);}catch(const std::invalid_argument&){refused=true;}expect(refused);
     }
     auto one=class_study::parse_conversion_options(J{{"max_batch_size",1}},13);

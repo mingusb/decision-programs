@@ -6,41 +6,41 @@ refinement, exact-key interning and complete matcher coverage remain explicit
 obligations. Encoded-byte optimality is not claimed. -/
 namespace ConverterHardRewriteExhaustion
 open ConverterGuarantees ConverterHardAxisRewrites
-variable {L : Type}
+variable {L F G : Type} {C : G → Type}
 
-def internal : Tree Question L → Nat
+def internal : Tree (Question F G C) L → Nat
   | .leaf _ => 0
   | .branch _ a b => internal a + internal b + 1
 
-inductive Step : Tree Question L → Tree Question L → Prop where
-  | left_weaker (f : Fin 10) (a b : Int) (ordered : a ≤ b)
-      (l m r : Tree Question L) :
+inductive Step : Tree (Question F G C) L → Tree (Question F G C) L → Prop where
+  | left_weaker (f : F) (a b : Int) (ordered : a ≤ b)
+      (l m r : Tree (Question F G C) L) :
       Step (.branch (.numeric f a) (.branch (.numeric f b) l m) r)
         (.branch (.numeric f a) l r)
-  | right_stronger (f : Fin 10) (a b : Int) (ordered : b ≤ a)
-      (l m r : Tree Question L) :
+  | right_stronger (f : F) (a b : Int) (ordered : b ≤ a)
+      (l m r : Tree (Question F G C) L) :
       Step (.branch (.numeric f a) l (.branch (.numeric f b) m r))
         (.branch (.numeric f a) l r)
-  | absorb_smaller (f : Fin 10) (a b : Int) (ordered : b ≤ a)
-      (l r : Tree Question L) :
+  | absorb_smaller (f : F) (a b : Int) (ordered : b ≤ a)
+      (l r : Tree (Question F G C) L) :
       Step (.branch (.numeric f a) (.branch (.numeric f b) l r) r)
         (.branch (.numeric f b) l r)
-  | absorb_larger (f : Fin 10) (a b : Int) (ordered : a ≤ b)
-      (l r : Tree Question L) :
+  | absorb_larger (f : F) (a b : Int) (ordered : a ≤ b)
+      (l r : Tree (Question F G C) L) :
       Step (.branch (.numeric f a) l (.branch (.numeric f b) l r))
         (.branch (.numeric f b) l r)
-  | repeated_left (q : Question) (l m r : Tree Question L) :
+  | repeated_left (q : Question F G C) (l m r : Tree (Question F G C) L) :
       Step (.branch q (.branch q l m) r) (.branch q l r)
-  | repeated_right (q : Question) (l m r : Tree Question L) :
+  | repeated_right (q : Question F G C) (l m r : Tree (Question F G C) L) :
       Step (.branch q l (.branch q m r)) (.branch q l r)
-  | equal_children (q : Question) (t : Tree Question L) :
+  | equal_children (q : Question F G C) (t : Tree (Question F G C) L) :
       Step (.branch q t t) t
-  | under_left (q : Question) {a b : Tree Question L} (right : Tree Question L) :
+  | under_left (q : Question F G C) {a b : Tree (Question F G C) L} (right : Tree (Question F G C) L) :
       Step a b → Step (.branch q a right) (.branch q b right)
-  | under_right (q : Question) (left : Tree Question L) {a b : Tree Question L} :
+  | under_right (q : Question F G C) (left : Tree (Question F G C) L) {a b : Tree (Question F G C) L} :
       Step a b → Step (.branch q left a) (.branch q left b)
 
-theorem step_correct {a b : Tree Question L} (step : Step a b) (x : Cell) :
+theorem step_correct [∀ g, DecidableEq (C g)] {a b : Tree (Question F G C) L} (step : Step a b) (x : Cell F G C) :
     eval truth a x = eval truth b x := by
   induction step with
   | left_weaker f a b ordered l m r => exact left_weaker_test f a b ordered l m r x
@@ -54,38 +54,38 @@ theorem step_correct {a b : Tree Question L} (step : Step a b) (x : Cell) :
   | under_right q left _ ih => simp only [eval, ih]
 
 /-- Every nontrivial occurrence rewrite drops at least one unfolded branch. -/
-theorem step_decreases {a b : Tree Question L} (step : Step a b) :
+theorem step_decreases {a b : Tree (Question F G C) L} (step : Step a b) :
     internal b < internal a := by
   induction step <;> simp_all only [internal] <;> omega
 
-inductive Steps : Nat → Tree Question L → Tree Question L → Prop where
-  | refl (t : Tree Question L) : Steps 0 t t
-  | next {n : Nat} {a b c : Tree Question L} :
+inductive Steps : Nat → Tree (Question F G C) L → Tree (Question F G C) L → Prop where
+  | refl (t : Tree (Question F G C) L) : Steps 0 t t
+  | next {n : Nat} {a b c : Tree (Question F G C) L} :
       Step a b → Steps n b c → Steps (n+1) a c
 
-theorem steps_correct {n : Nat} {a b : Tree Question L}
-    (path : Steps n a b) (x : Cell) : eval truth a x = eval truth b x := by
+theorem steps_correct [∀ g, DecidableEq (C g)] {n : Nat} {a b : Tree (Question F G C) L}
+    (path : Steps n a b) (x : Cell F G C) : eval truth a x = eval truth b x := by
   induction path with
   | refl t => rfl
   | next step _ ih => exact (step_correct step x).trans ih
 
-theorem steps_bound {n : Nat} {a b : Tree Question L} (path : Steps n a b) :
+theorem steps_bound {n : Nat} {a b : Tree (Question F G C) L} (path : Steps n a b) :
     internal b + n ≤ internal a := by
   induction path with
   | refl t => simp
   | next step _ ih => have := step_decreases step; omega
 
-theorem no_infinite_rewrites (start : Tree Question L)
-    (trajectory : Nat → Tree Question L) :
+theorem no_infinite_rewrites (start : Tree (Question F G C) L)
+    (trajectory : Nat → Tree (Question F G C) L) :
     ¬ (∀ n, Steps n start (trajectory n)) := by
   intro all
   have bound := steps_bound (all (internal start + 1))
   omega
 
-def Exhausted (t : Tree Question L) : Prop := ∀ u, ¬ Step t u
+def Exhausted (t : Tree (Question F G C) L) : Prop := ∀ u, ¬ Step t u
 
 /-- This is existence of a catalogue normal form, not a shortest program. -/
-theorem reaches_exhausted (t : Tree Question L) :
+theorem reaches_exhausted (t : Tree (Question F G C) L) :
     ∃ n u, Steps n t u ∧ Exhausted u := by
   induction count : internal t using Nat.strongRecOn generalizing t with
   | ind k ih =>
@@ -105,9 +105,9 @@ theorem reaches_exhausted (t : Tree Question L) :
 
 /-- A complete matcher must inspect the final canonical collected candidate.
     A zero count before reference canonicalization need not meet this premise. -/
-theorem complete_matcher_zero (hasNext : Tree Question L → Bool)
+theorem complete_matcher_zero (hasNext : Tree (Question F G C) L → Bool)
     (complete : ∀ t, hasNext t = true ↔ ∃ u, Step t u)
-    (t : Tree Question L) (zero : hasNext t = false) : Exhausted t := by
+    (t : Tree (Question F G C) L) (zero : hasNext t = false) : Exhausted t := by
   intro u step
   have positive := (complete t).mpr ⟨u,step⟩
   simp [zero] at positive
@@ -124,7 +124,7 @@ theorem complete_pass_decreases (oldUnfolded newUnfolded oldPhysical newPhysical
 
 /-- Exact interning/collection cannot affect the virtual unfolded measure
     when its refinement returns the very same unfolded tree. -/
-theorem exact_unfolding_preserves_measure (before after : Tree Question L)
+theorem exact_unfolding_preserves_measure (before after : Tree (Question F G C) L)
     (same : before = after) : internal before = internal after := by
   rw [same]
 

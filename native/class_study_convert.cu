@@ -215,7 +215,7 @@ ConvertedModel convert_model(const ConversionSource& input, const NativeOracle& 
     statistics["refinement_requested_visit_budget"] = options.refinement_visit_budget ? json(*options.refinement_visit_budget) : json(nullptr);
     statistics["cover_effort_mode"] = options.cover_visit_budget ? (*options.cover_visit_budget ? "fixed" : "disabled") : "dynamic";
     statistics["cover_requested_visit_budget"] = options.cover_visit_budget ? json(*options.cover_visit_budget) : json(nullptr);
-    statistics["cover_proof_scope"] = "same native-qualified winner on every feasible side of selected source predicate; proof splits are not published";
+    statistics["cover_proof_scope"] = "same native-qualified winner over exhaustive proof-only covers, optionally with a separate cover for each rival; proof splits are not published";
     statistics["autotune_work_equivalent_scope"] = "scheduling proxy: jobs + 2*additional nonterminal prunes + completed cache edges; separate from raw jobs/s";
     const auto initial_batch = options.batch_size ? options.batch_size :
         std::min<std::uint32_t>(32, options.max_batch_size ? options.max_batch_size : 32);
@@ -288,12 +288,32 @@ ConvertedModel convert_model(const ConversionSource& input, const NativeOracle& 
       const auto source_walk_shape = walk_shape.download(2);
       const bool effort_enabled = gap_enabled && (!options.refinement_visit_budget || *options.refinement_visit_budget != 0);
       const bool cover_enabled = gap_enabled && (!options.cover_visit_budget || *options.cover_visit_budget != 0);
-      e.refinement_stack_capacity = (effort_enabled || cover_enabled) ? source_walk_shape[0] : 0;
-      e.refinement_maximum_visits = (effort_enabled || cover_enabled) ? source_walk_shape[1] : 0;
-      const auto cover_maximum_visits = std::uint32_t(std::min<std::uint64_t>(UINT32_MAX,std::uint64_t(e.refinement_maximum_visits)*2));
+      e.joint_pair_visit_budget = options.joint_bounds && (effort_enabled || cover_enabled) ? UINT32_MAX : 0;
+      e.rival_cover_enabled = options.rival_covers && cover_enabled;
+      e.relational_bounds_enabled = options.relational_bounds && (effort_enabled || cover_enabled);
+      e.unary_bounds_enabled = options.unary_bounds && (effort_enabled || cover_enabled);
+      const auto proof_stack_words = (e.joint_pair_visit_budget || e.relational_bounds_enabled) ?
+        std::max<std::uint64_t>(source_walk_shape[0],4ull*(2ull*source_walk_shape[0]+1)) : source_walk_shape[0];
+      a::require(proof_stack_words<=UINT32_MAX,"joint proof traversal scratch exceeds index capacity");
+      e.refinement_stack_capacity = (effort_enabled || cover_enabled) ? std::uint32_t(proof_stack_words) : 0;
+      // Each enabled proof pass contributes one source-traversal effort ceiling.
+      // This is only an effort ceiling; the dynamic tuner chooses actual work.
+      e.refinement_maximum_visits = (effort_enabled || cover_enabled) ?
+        std::uint32_t(std::min<std::uint64_t>(UINT32_MAX,
+          std::uint64_t(source_walk_shape[1])*(1ull+(e.joint_pair_visit_budget?1ull:0ull)+(e.relational_bounds_enabled?1ull:0ull)+(e.unary_bounds_enabled?1ull:0ull)))) : 0;
+      const auto cover_maximum_visits = std::uint32_t(std::min<std::uint64_t>(UINT32_MAX,std::uint64_t(e.refinement_maximum_visits)*(e.rival_cover_enabled?2ull*(e.source.classes+1ull):2ull)));
       statistics["source_traversal_frontier_words"] = source_walk_shape[0];
       statistics["source_original_node_visits"] = source_walk_shape[1];
       statistics["refinement_authority_available"] = gap_enabled;
+      statistics["new_proof_counter_scope"] = "direct state proofs since process start; nested cover work is included only in aggregate cover visits; saved search state is preserved on resume";
+      statistics["unary_bounds_requested"] = options.unary_bounds;
+      statistics["unary_bounds_effective"] = e.unary_bounds_enabled;
+      statistics["relational_bounds_requested"] = options.relational_bounds;
+      statistics["relational_bounds_effective"] = e.relational_bounds_enabled;
+      statistics["joint_bounds_requested"] = options.joint_bounds;
+      statistics["joint_bounds_effective"] = bool(e.joint_pair_visit_budget);
+      statistics["rival_covers_requested"] = options.rival_covers;
+      statistics["rival_covers_effective"] = e.rival_cover_enabled;
       statistics["refinement_effective_enabled"] = effort_enabled && e.refinement_maximum_visits > 0;
       statistics["refinement_stack_capacity"] = e.refinement_stack_capacity;
       statistics["refinement_maximum_visits"] = e.refinement_maximum_visits;
@@ -309,9 +329,9 @@ ConvertedModel convert_model(const ConversionSource& input, const NativeOracle& 
       const bool eta_enabled=options.completion_estimate_enabled&&bool(options.progress);
       const bool eta_policy_compatible=options.split_policy=="source_order"&&
         options.proof_module_directory.empty()&&options.proof_module_request.empty()&&
-        (!gap_enabled||((options.refinement_visit_budget.has_value()||!effort_enabled)&&
+        (!gap_enabled||((!e.joint_pair_visit_budget)&&(!e.relational_bounds_enabled)&&(!e.unary_bounds_enabled)&&(options.refinement_visit_budget.has_value()||!effort_enabled)&&
                        options.cover_visit_budget.has_value()&&*options.cover_visit_budget==0));
-      const std::string eta_policy_reason="The root-path sampler requires source_order, fixed effective refinement, zero cover effort and no hotloaded proof strategies; dynamic/alternative regimes need a matching frontier sampler.";
+      const std::string eta_policy_reason="The root-path sampler requires source_order, fixed independent refinement, zero cover effort and no hotloaded proof strategies; dynamic/alternative regimes need a matching frontier sampler.";
       const auto eta_refinement=effort_enabled?
         std::min(options.refinement_visit_budget.value_or(0),e.refinement_maximum_visits):0;
       if(!eta_enabled)eta_reporter.refuse("disabled","Construction ETA reporting is disabled or no progress callback is installed.");
@@ -429,11 +449,25 @@ ConvertedModel convert_model(const ConversionSource& input, const NativeOracle& 
           {"refinement_probes", snapshot.refinement_probes},
           {"refinement_attempts", snapshot.refinement_attempts},
           {"refinement_visits", snapshot.refinement_visits},
+          {"unary_attempts",snapshot.unary_attempts},{"unary_visits",snapshot.unary_visits},
+          {"unary_groups",snapshot.unary_groups},{"unary_completed",snapshot.unary_completed},
+          {"unary_fallbacks",snapshot.unary_fallbacks},{"unary_prunes",snapshot.unary_prunes},
+          {"relational_attempts",snapshot.relational_attempts},{"relational_visits",snapshot.relational_visits},
+          {"relational_pairs",snapshot.relational_pairs},{"relational_completed",snapshot.relational_completed},
+          {"relational_fallbacks",snapshot.relational_fallbacks},{"relational_prunes",snapshot.relational_prunes},
+          {"refinement_pair_attempts",snapshot.refinement_pair_attempts},
+          {"refinement_pair_completed",snapshot.refinement_pair_completed},
+          {"refinement_pair_tightened",snapshot.refinement_pair_tightened},
+          {"refinement_pair_fallbacks",snapshot.refinement_pair_fallbacks},
+          {"refinement_pair_visits",snapshot.refinement_pair_visits},
+          {"refinement_pair_additional_prunes",snapshot.refinement_pair_additional_prunes},
+
           {"refinement_tightened_roots", snapshot.refinement_tightened_roots},
           {"refinement_rejected_roots", snapshot.refinement_rejected_roots},
           {"refinement_fallback_frontiers", snapshot.refinement_fallback_frontiers},
           {"refinement_additional_prunes", snapshot.refinement_additional_prunes},
           {"cover_visit_budget", snapshot.cover_visit_budget},
+          {"cover_rival_attempts",snapshot.cover_rival_attempts},{"cover_rival_prunes",snapshot.cover_rival_prunes},
           {"cover_adjustments", snapshot.cover_adjustments},
           {"cover_probes", snapshot.cover_probes},
           {"cover_attempts", snapshot.cover_attempts},
@@ -546,7 +580,7 @@ ConvertedModel convert_model(const ConversionSource& input, const NativeOracle& 
     statistics["native_public_terminal_contract"] = native.objective == "multi:softmax" ? "direct_class_index" : "softprob_firstargmax";
     statistics["exact_native_class_conversion"] = false;
     statistics["accepted_native_class_root"] = false;
-    statistics["acceptance_scope"] = "Complete composed adaptive candidate; ordered native terminal words and source-specific authorized gap rules; independent root acceptance remains separate.";
+    statistics["acceptance_scope"] = "Complete adaptive candidate; ordered native terminal words and source-specific authorized gap rules; independent root acceptance remains separate.";
     statistics["dataset_payload_read"] = false; statistics["FIT_VALID_TEST_labels_used"] = false;
     statistics["TEST_read"] = false; statistics["global_minimum_claim"] = false;
     publish("complete"); result.metrics = std::move(statistics); return result;

@@ -13,7 +13,8 @@ empty-family extremum, floating-point reassociation, or real-margin surrogate.
 One instantiation must keep the same source, domain, consumed prefix, fixed
 winner/rival, and actual rounded margin throughout. CUDA correspondence,
 finite score ranges, and the authentic native class gate remain separate
-obligations. Incomplete proof searches never supply a new certificate.
+obligations. Incomplete coverage cannot certify a new bound. Interrupted
+exploration may still certify when conservative fallback bounds complete the cover.
 -/
 namespace CoverRefinement
 
@@ -145,17 +146,6 @@ theorem rival_floors_certify_winner
   intro c hc
   exact trans (sufficient c hc) (sound c hc x hx)
 
-/- A failed finer numerical method can always retain a sound parent bound.
-   Counterexample: a minimum computed from only examined cases is unsound. -/
-theorem partial_cover_minimum_is_not_a_certificate :
-    (10 : Int) ≤ (if true then 10 else -1) ∧
-    ¬ (∀ p : Bool, (10 : Int) ≤ (if p then 10 else -1)) := by
-  constructor
-  · decide
-  · intro h
-    have impossible : ¬ ((10 : Int) ≤ -1) := by decide
-    exact impossible (h false)
-
 #print axioms exhaustive_cover_floor_sound
 #print axioms refined_floor_not_weaker
 #print axioms inherit_parent_bound
@@ -165,6 +155,5 @@ theorem partial_cover_minimum_is_not_a_certificate :
 #print axioms failed_attempt_preserves_bound
 #print axioms retain_dominates_candidate
 #print axioms rival_floors_certify_winner
-#print axioms partial_cover_minimum_is_not_a_certificate
 
 end CoverRefinement

@@ -101,6 +101,15 @@ native-class preservation applies to the **declared conversion domain**, includi
 any one-hot restrictions. Runtime tools report the supported input representation
 separately and establish no new native-source equivalence outside that domain.
 
+Joint bounds and rival covers are enabled by default; `--no-joint-bounds` and
+`--no-rival-covers` disable them. Relational and grouped unary bounds are optional:
+use `--relational-bounds` or `--unary-bounds` to enable them, or the corresponding
+`--no-...-bounds` flag to disable them explicitly. Supplying both forms of one
+option is rejected. These methods share the existing native qualification rule.
+The default [two-point screen](TWO_POINT_SCREEN.md) can avoid further proof search
+when two qualified feasible inputs have different classes; ordinary construction
+still follows, and no extra public option is needed.
+
 Simplification retains the source binding. It may stop before a fixed point when
 the pass budget is exhausted. Native comparison is a separate evaluation:
 

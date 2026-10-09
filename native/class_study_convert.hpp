@@ -83,6 +83,8 @@ struct ConversionOptions {
   // Cover effort separately budgets both proof-only predicate branches and
   // reuses the same private traversal scratch. It grants no extra authority.
   std::optional<std::uint32_t> completed_cache_limit, refinement_visit_budget, cover_visit_budget;
+  // Share the existing proof budgets. Cross-class relational work is opt-in.
+  bool joint_bounds=true, rival_covers=true, relational_bounds=false, unary_bounds=false;
   // Long-running callers explicitly opt into persistence. Ordinary study trials
   // remain entirely in memory. Boundaries are safe points, never the cadence.
   std::string checkpoint_path, resume_from;

@@ -19,7 +19,7 @@ namespace fs=std::filesystem;
 using J=nlohmann::json;
 using Args=std::vector<std::string>;
 void need(bool ok,const std::string& why){if(!ok)throw std::invalid_argument(why);}
-const std::set<std::string> switches={"help","dry-run","check","gpu","stop-after-oof","all","list","diagnostic-trajectories","nested-holdout"};
+const std::set<std::string> switches={"help","dry-run","check","gpu","stop-after-oof","all","list","diagnostic-trajectories","nested-holdout","no-joint-bounds","no-rival-covers","relational-bounds","no-relational-bounds","unary-bounds","no-unary-bounds"};
 struct Options {
   std::map<std::string,Args> values; Args tail;
   Options(const Args& arguments){
@@ -214,11 +214,19 @@ const std::set<std::string> data_options={"data","target","header","label-map","
 const std::set<std::string> hp_options={"rounds","depth","eta","lambda","alpha","gamma","min-child-weight","max-bin","seed","subsample","colsample-bytree","colsample-bylevel","colsample-bynode"};
 std::set<std::string> allowed(std::initializer_list<const char*> keys,bool data=false,bool hp=false){std::set<std::string> out;for(auto key:keys)out.insert(key);if(data)out.insert(data_options.begin(),data_options.end());if(hp)out.insert(hp_options.begin(),hp_options.end());return out;}
 void conversion_flags(J&options,const Options&o){
+  need(!(o.has("relational-bounds")&&o.has("no-relational-bounds")),"--relational-bounds and --no-relational-bounds cannot be combined");
+  need(!(o.has("unary-bounds")&&o.has("no-unary-bounds")),"--unary-bounds and --no-unary-bounds cannot be combined");
+  if(o.has("unary-bounds"))options["unary_bounds"]=true;
+  if(o.has("no-unary-bounds"))options["unary_bounds"]=false;
+  if(o.has("relational-bounds"))options["relational_bounds"]=true;
+  if(o.has("no-joint-bounds"))options["joint_bounds"]=false;
+  if(o.has("no-rival-covers"))options["rival_covers"]=false;
+  if(o.has("no-relational-bounds"))options["relational_bounds"]=false;
   for(const char* key:{"initial-states","max-states","initial-nodes","max-nodes","gpu-byte-budget","max-expansions","batch-size","max-batch-size","admission-threads","draft-threads","oldest-ready-jobs","completed-cache-limit","refinement-visit-budget","cover-visit-budget","checkpoint-interval-seconds","checkpoint-host-byte-budget"})if(o.has(key)){std::string name=key;std::replace(name.begin(),name.end(),'-','_');options[name]=scalar(o.get(key));}
   for(const char* key:{"split-policy","runtime-residency"})if(o.has(key)){std::string name=key;std::replace(name.begin(),name.end(),'-','_');options[name]=o.get(key);}
   for(auto [key,name]:std::vector<std::pair<const char*,const char*>>{{"checkpoint","checkpoint_path"},{"resume","resume_from"},{"proof-dir","proof_module_directory"},{"proof-request","proof_module_request"}})if(o.has(key))options[name]=absolute(o.get(key)).string();
 }
-std::set<std::string> conversion_options(){return allowed({"model","library","options","out","initial-states","max-states","initial-nodes","max-nodes","gpu-byte-budget","max-expansions","batch-size","max-batch-size","admission-threads","draft-threads","oldest-ready-jobs","completed-cache-limit","refinement-visit-budget","cover-visit-budget","checkpoint-interval-seconds","checkpoint-host-byte-budget","split-policy","runtime-residency","checkpoint","resume","proof-dir","proof-request"});}
+std::set<std::string> conversion_options(){return allowed({"model","library","options","out","initial-states","max-states","initial-nodes","max-nodes","gpu-byte-budget","max-expansions","batch-size","max-batch-size","admission-threads","draft-threads","oldest-ready-jobs","completed-cache-limit","refinement-visit-budget","cover-visit-budget","checkpoint-interval-seconds","checkpoint-host-byte-budget","split-policy","runtime-residency","checkpoint","resume","proof-dir","proof-request","no-joint-bounds","no-rival-covers","relational-bounds","no-relational-bounds","unary-bounds","no-unary-bounds"});}
 void help(const std::string& command={}){
   if(command.empty()){
     std::cout<<R"(decision-programs — exact decision programs on CUDA
@@ -261,6 +269,9 @@ Version: 0.1.0. Numerical computation: C++23/CUDA.
   [--options OPTIONS.json] [--max-nodes N] [--max-states N]
   [--gpu-byte-budget BYTES] [--max-expansions N] [--batch-size N]
   [--split-policy source_order|widest_residual|aggregate_residual|contracting_residual]
+  [--no-joint-bounds] [--no-rival-covers]
+  [--relational-bounds | --no-relational-bounds]  (relational bounds default off)
+  [--unary-bounds | --no-unary-bounds]  (grouped unary bounds default off)
   [--runtime-residency dual|canonical_only|compact_only]
   [--checkpoint DIRECTORY] [--resume DIRECTORY] [--proof-dir DIRECTORY]
   [--proof-request FILE] [--set /OPTION=JSON_VALUE]

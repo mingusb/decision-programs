@@ -64,7 +64,8 @@ J self_test(){
   corrupt("zero_nodes",24,0,8);corrupt("overflow_node_count",24,UINT64_MAX,8);
   corrupt("wrong_depth",32,1,8);corrupt("excess_depth",32,5,8);
   corrupt("feature_out_of_range",40,11,4);corrupt("negative_branch_feature",40,W(-2),4);
-  corrupt("positive_infinity_cut",60,0x7f800000U,4);corrupt("negative_infinity_cut",60,0xff800000U,4);corrupt("NaN_cut",60,0x7fc00001U,4);
+  for(W cut:{0x7f800000U,0xff800000U})for(W missing:{0U,1U}){auto b=base;replace(b,60,cut,4);replace(b,80,missing,1);check("infinite_cut_bit_exact_"+std::to_string(cut)+"_"+std::to_string(missing),[&]{auto a=adapt(b);need(class_tree_adapter::inverse(a,b)==b,"infinite cut or missing direction changed");},true);}
+  corrupt("NaN_cut",60,0x7fc00001U,4);
   corrupt("invalid_branch_missing_flag",80,2,1);
   corrupt("child_out_of_range",85,5,8);corrupt("root_cycle",85,0,8);
   corrupt("duplicate_children",125,3,8);corrupt("leaf_has_successor",93,0,8);

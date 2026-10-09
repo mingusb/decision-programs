@@ -1,5 +1,6 @@
 #pragma once
 #include "adaptive_engine.cuh"
+#include "adaptive_gap_evidence.hpp"
 #include "adaptive_native_batch.cuh"
 #include "adaptive_effort.cuh"
 #include "adaptive_cover_proof.cuh"
@@ -60,9 +61,17 @@ struct Snapshot {
   u64 cache_limit_adjustments=0,cache_limit_probes=0,cache_policy_evictions=0;
   u64 refinement_adjustments=0,refinement_probes=0,refinement_attempts=0,refinement_visits=0;
   u64 refinement_tightened_roots=0,refinement_rejected_roots=0,refinement_fallback_frontiers=0,refinement_additional_prunes=0;
+  u64 refinement_pair_attempts=0,refinement_pair_completed=0,refinement_pair_tightened=0;
+  u64 refinement_pair_fallbacks=0,refinement_pair_visits=0,refinement_pair_additional_prunes=0;
+  u64 relational_attempts=0,relational_visits=0,relational_pairs=0,relational_completed=0,relational_fallbacks=0,relational_prunes=0;
+  u64 unary_attempts=0,unary_visits=0,unary_groups=0,unary_completed=0,unary_fallbacks=0,unary_prunes=0,unary_optimistic_rejections=0;
   u32 cover_visit_budget=0;
   u64 cover_adjustments=0,cover_probes=0,cover_attempts=0,cover_visits=0;
   u64 cover_feasible_cases=0,cover_certified_cases=0,cover_additional_prunes=0,cover_failures=0;
+  u64 cover_rival_attempts=0,cover_rival_prunes=0;
+  u64 point_screen_attempts=0,point_screen_intersections=0,point_screen_first_complete=0,point_screen_first_qualified=0;
+  u64 point_screen_second_complete=0,point_screen_second_qualified=0,point_screen_mixed=0,point_screen_inconclusive=0;
+  u64 point_screen_first_visits=0,point_screen_second_visits=0;
   u64 retune_backoff_batches=0,retune_cooldown_batches=0,retune_drift_resets=0;
   double autotune_last_work_equivalents_per_second=0,autotune_best_work_equivalents_per_second=0;
   double autotune_last_jobs_per_second=0,autotune_best_jobs_per_second=0;
@@ -79,7 +88,8 @@ inline Snapshot run(EngineView&,std::unique_ptr<StateStorage>&,
                     const NativePredict&,bool direct_public_classes,
                     const Progress&,const std::function<void()>& check_native_gate={},
                     const grid::HostCatalog* coverage_catalog=nullptr,
-                    Buffer<Status>* status_owner=nullptr);
+                    Buffer<Status>* status_owner=nullptr,
+                    Buffer<gap_evidence::Evidence>* gap_evidence_owner=nullptr);
 } // namespace class_conversion_adaptive::frontier
 
 namespace class_conversion_adaptive::frontier {
@@ -87,6 +97,18 @@ namespace detail {
 constexpr u32 ready_once=1u,finish_once=2u,cached_once=16u;
 constexpr u32 tuning_window_batches=4;
 enum Stage:u32 {idle=0,draft_commit=1,native_query=2,native_commit=3};
+// Observation-only counters reset on process resume. Keep persisted Control
+// layout unchanged so new proof strategies can resume existing checkpoints.
+struct ProofCounters {
+  u64 refinement_pair_attempts=0,refinement_pair_completed=0,refinement_pair_tightened=0;
+  u64 refinement_pair_fallbacks=0,refinement_pair_visits=0,refinement_pair_additional_prunes=0;
+  u64 relational_attempts=0,relational_visits=0,relational_pairs=0,relational_completed=0,relational_fallbacks=0,relational_prunes=0;
+  u64 unary_attempts=0,unary_visits=0,unary_groups=0,unary_completed=0,unary_fallbacks=0,unary_prunes=0,unary_optimistic_rejections=0;
+  u64 cover_rival_attempts=0,cover_rival_prunes=0;
+  u64 point_screen_attempts=0,point_screen_intersections=0,point_screen_first_complete=0,point_screen_first_qualified=0;
+  u64 point_screen_second_complete=0,point_screen_second_qualified=0,point_screen_mixed=0,point_screen_inconclusive=0;
+  u64 point_screen_first_visits=0,point_screen_second_visits=0;
+};
 struct Control {
   u64 ready_count=0,ready_head=0,finish_head=0,finish_tail=0;
   u64 cache_head=0,cache_tail=0;
@@ -113,6 +135,9 @@ struct DraftView {
   u64 *allowed,*witness_allowed,*active_support;
   float *range_lower,*range_upper;
   u32* refinement_stack;
+  u32 *unary_axes,*unary_minimum,*unary_maximum,*unary_cuts,*unary_order;
+  double* unary_first;
+  cover::PointScreen* point_screen=nullptr;
 };
 struct View {
   QueueView queue;DraftView draft;Control* control;
@@ -125,6 +150,11 @@ struct View {
   u32 oldest_ready_jobs=0;
   u32 cover_visits=0;
   const proof_modules::ProposalV1* proof_proposals=nullptr;
+  ProofCounters* proof_counts=nullptr;
+  // Nullable, transient metadata. State/node/queue/checkpoint layouts are unchanged.
+  // Serial publication owns these bytes; proof workers never mutate them.
+  gap_evidence::Evidence* gap_evidence=nullptr;
+  bool gap_context_supported=false;
 };
 struct QueueStorage {
   Buffer<u32> ready,finish,flags,pending,wait_head,edge_next,completed;
@@ -141,17 +171,21 @@ struct DraftStorage {
   Buffer<std::int32_t> residual;
   Buffer<u64> allowed,witness_allowed,active_support;
   Buffer<float> range_lower,range_upper;
-  Buffer<u32> refinement_stack;
-  DraftStorage(Budget& b,u32 slots,u32 N,u32 K,u32 T,u32 W,u32 S,u32 R):states(b,slots),status(b,slots),
+  Buffer<u32> refinement_stack,unary_axes,unary_minimum,unary_maximum,unary_cuts,unary_order;
+  Buffer<double> unary_first;
+  Buffer<cover::PointScreen> point_screen;
+  DraftStorage(Budget& b,u32 slots,u32 N,u32 K,u32 T,u32 W,u32 S,u32 R,u32 U=0,u32 B=0,u32 P=0,bool points=false):states(b,slots),status(b,slots),
     words(b,multiply(slots,K)),positions(b,multiply(slots,K)),blocked(b,multiply(slots,K)),
     lower(b,multiply(slots,N)),upper(b,multiply(slots,N)),missing(b,multiply(slots,N)),
     witness_lower(b,multiply(slots,N)),witness_upper(b,multiply(slots,N)),witness_missing(b,multiply(slots,N)),
     residual(b,multiply(slots,T)),allowed(b,multiply(slots,W)),witness_allowed(b,multiply(slots,W)),
     active_support(b,multiply(slots,S)),range_lower(b,multiply(slots,K)),range_upper(b,multiply(slots,K)),
-    refinement_stack(b,multiply(slots,R)) {}
+    refinement_stack(b,multiply(slots,R)),unary_axes(b,multiply(slots,U)),
+    unary_minimum(b,multiply(slots,U)),unary_maximum(b,multiply(slots,U)),unary_cuts(b,multiply(slots,B)),unary_order(b,multiply(slots,U)),unary_first(b,multiply(slots,P)),point_screen(b,points?slots:0) {}
   DraftView view(){return {states.data,status.data,words.data,positions.data,blocked.data,lower.data,upper.data,missing.data,
     witness_lower.data,witness_upper.data,witness_missing.data,residual.data,allowed.data,witness_allowed.data,
-    active_support.data,range_lower.data,range_upper.data,refinement_stack.data};}
+    active_support.data,range_lower.data,range_upper.data,refinement_stack.data,
+    unary_axes.data,unary_minimum.data,unary_maximum.data,unary_cuts.data,unary_order.data,unary_first.data,point_screen.data};}
 };
 // One owner for scratch whose contents are disposable ONLY at an idle boundary.
 // Queue/control/state ownership is separate and never changes during resizing.
@@ -165,7 +199,8 @@ struct BatchStorage {
   u32 capacity;
   BatchStorage(Budget& b,u32 n,const EngineView& e,split::View selection={})
       :draft(b,u32(multiply(n,2)),e.domain.numeric_features,e.source.classes,
-             e.source.trees,e.domain.mask_words,e.support_words,e.refinement_stack_capacity),
+             e.source.trees,e.domain.mask_words,e.support_words,e.refinement_stack_capacity,
+             e.unary_bounds_enabled?e.source.trees:0,unary_cut_words(e),unary_probe_entries(e),e.two_point_screen_enabled),
        jobs(b,n),kinds(b,n),prune_labels(b,n),native_ids(b,n),native_labels(b,n),selected_predicates(b,n),proof_proposals(b,n),
        split_scores(b,selection.policy==split::Policy::aggregate_residual?multiply(n,selection.groups):0),
        native_rows(b,multiply(n,e.source.features)),capacity(n) {}
@@ -181,6 +216,8 @@ inline u64 scratch_bytes(const EngineView& e,u32 n,split::View selection={}) {
   one=plus(one,multiply(e.domain.mask_words,16));
   one=plus(one,multiply(e.support_words,8));
   one=plus(one,multiply(e.refinement_stack_capacity,4));
+  if(e.unary_bounds_enabled)one=plus(one,plus(plus(multiply(e.source.trees,16),multiply(unary_cut_words(e),4)),multiply(unary_probe_entries(e),8)));
+  if(e.two_point_screen_enabled)one=plus(one,sizeof(cover::PointScreen));
   u64 scoring=selection.policy==split::Policy::aggregate_residual?multiply(selection.groups,8):0;
   return multiply(n,plus(multiply(one,2),plus(plus(24+sizeof(proof_modules::ProposalV1),multiply(e.source.features,4)),scoring)));
 }
@@ -191,7 +228,8 @@ inline u64 state_owner_bytes(const EngineView& e,u32 n) {
 // Reserve the next state/queue owners when the worst two-child batch needs them;
 // this accounts for coexistence with current owners, not just final arena bytes.
 inline bool batch_resources(const EngineView& e,const Status& h,const Control& c,
-    const Budget& b,u32 capacity,u64 max_states,u64 new_scratch_bytes) {
+    const Budget& b,u32 capacity,u64 max_states,u64 new_scratch_bytes,
+    bool with_gap_evidence=false) {
   require(h.free_count<=h.states,"frontier free-list resource extent");
   u64 cached=c.cache_tail-c.cache_head,live=h.states-h.free_count;
   require(cached<=live,"frontier completed-cache resource extent");
@@ -209,7 +247,8 @@ inline bool batch_resources(const EngineView& e,const Status& h,const Control& c
   u64 available=std::min(b.limit-b.used-new_scratch_bytes,u64(free_bytes)-native_output-new_scratch_bytes);
   if(needed<=e.arena.state_capacity)return true;
   auto plan=growth::choose(e.arena.state_capacity,needed,max_states,available,[&](u32 n){
-    return plus(plus(state_owner_bytes(e,n),growth::queue_bytes(n)),sizeof(Control));
+    return plus(plus(plus(state_owner_bytes(e,n),growth::queue_bytes(n)),sizeof(Control)),
+      with_gap_evidence?multiply(n,sizeof(gap_evidence::Evidence)):0);
   });
   return plan.affordable;
 }
@@ -265,7 +304,16 @@ __device__ EngineView private_view(EngineView e,View f,u32 slot) {
   e.draft_region={offset(d.lower,u64(slot)*N),offset(d.upper,u64(slot)*N),offset(d.missing,u64(slot)*N),offset(d.allowed,u64(slot)*W)};
   e.draft_witness={offset(d.witness_lower,u64(slot)*N),offset(d.witness_upper,u64(slot)*N),offset(d.witness_missing,u64(slot)*N),offset(d.witness_allowed,u64(slot)*W)};
   e.active_support=d.active_support+u64(slot)*e.support_words;
-  e.range_lower=d.range_lower+u64(slot)*K;e.range_upper=d.range_upper+u64(slot)*K;return e;
+  e.range_lower=d.range_lower+u64(slot)*K;e.range_upper=d.range_upper+u64(slot)*K;
+  e.unary_axes=offset(d.unary_axes,u64(slot)*T);
+  e.unary_minimum=offset(d.unary_minimum,u64(slot)*T);
+  e.unary_maximum=offset(d.unary_maximum,u64(slot)*T);
+  e.unary_cut_capacity=unary_cut_words(e);
+  e.unary_cuts=offset(d.unary_cuts,u64(slot)*e.unary_cut_capacity);
+  e.unary_order=offset(d.unary_order,u64(slot)*T);
+  e.unary_first_capacity=unary_probe_entries(e);
+  e.unary_first=offset(d.unary_first,u64(slot)*e.unary_first_capacity);
+  e.point_screen=offset(d.point_screen,slot);return e;
 }
 __device__ void fail(EngineView e,u32 code){if(!e.status->error)e.status->error=code;}
 __device__ void count_add(u64* target,u64 value){atomicAdd(reinterpret_cast<unsigned long long*>(target),static_cast<unsigned long long>(value));}
@@ -282,10 +330,14 @@ __device__ bool enqueue_finish(EngineView e,View f,u32 id) {
   if(f.control->finish_tail-f.control->finish_head>=f.queue.capacity){fail(e,53);return false;}
   f.queue.finish[f.control->finish_tail++%f.queue.capacity]=id;f.queue.flags[id]|=finish_once;return true;
 }
-__device__ void resolve_edge(EngineView e,View f,u32 parent,u32 side,u32 node) {
+__device__ void resolve_edge(EngineView e,View f,u32 parent,u32 side,u32 node,
+    gap_evidence::Evidence child_evidence=gap_evidence::Evidence::Unknown) {
   const u32 bit=4u<<side;
   if(parent>=e.status->states||node>=e.status->nodes||e.arena.states[parent].phase!=2||
       (f.queue.flags[parent]&bit)||!f.queue.pending[parent]){fail(e,54);return;}
+  // Consume context evidence before this edge loses its child-state identity.
+  // Equal output nodes do not discharge a missing context obligation.
+  if(f.gap_evidence)gap_evidence::observe_edge(f.gap_evidence[parent],child_evidence,true);
   if(side)e.arena.states[parent].right=node;else e.arena.states[parent].left=node;
   f.queue.flags[parent]|=bit;--f.queue.pending[parent];++f.control->resolved_edges;
   if(!f.queue.pending[parent])enqueue_finish(e,f,parent);
@@ -293,7 +345,9 @@ __device__ void resolve_edge(EngineView e,View f,u32 parent,u32 side,u32 node) {
 __device__ void attach_edge(EngineView e,View f,u32 parent,u32 side,u32 child,bool fresh) {
   if(child>=e.status->states||child==parent){fail(e,55);return;}
   if(side)e.arena.states[parent].right=child;else e.arena.states[parent].left=child;
-  if(e.arena.states[child].phase==3){++f.control->completed_edges;resolve_edge(e,f,parent,side,e.arena.states[child].node);}
+  if(e.arena.states[child].phase==3){++f.control->completed_edges;
+    resolve_edge(e,f,parent,side,e.arena.states[child].node,
+      f.gap_evidence?f.gap_evidence[child]:gap_evidence::Evidence::Unknown);}
   else {u32 edge=2*parent+side;f.queue.edge_next[edge]=f.queue.wait_head[child];f.queue.wait_head[child]=edge;
     if(!fresh)++f.control->pending_merges;}
 }
@@ -345,6 +399,27 @@ __global__ void prepare_drafts(EngineView e,View f) {
   if(proof.attempted){
     count_add(&f.control->refinement_attempts,1);
     count_add(&f.control->refinement_visits,proof.visited);
+    if(f.proof_counts){
+      count_add(&f.proof_counts->unary_attempts,proof.unary_attempted);
+      count_add(&f.proof_counts->unary_optimistic_rejections,proof.unary_optimistic_rejected);
+      count_add(&f.proof_counts->unary_visits,proof.unary_visits);
+      count_add(&f.proof_counts->unary_groups,proof.unary_groups);
+      count_add(&f.proof_counts->unary_completed,proof.unary_completed);
+      count_add(&f.proof_counts->unary_fallbacks,proof.unary_fallbacks);
+      if(proof.unary_additional_prune&&parent.predicate!=none)count_add(&f.proof_counts->unary_prunes,1);
+      count_add(&f.proof_counts->relational_attempts,proof.relational_attempted);
+      count_add(&f.proof_counts->relational_visits,proof.relational_visits);
+      count_add(&f.proof_counts->relational_pairs,proof.relational_pairs);
+      count_add(&f.proof_counts->relational_completed,proof.relational_completed);
+      count_add(&f.proof_counts->relational_fallbacks,proof.relational_fallbacks);
+      if(proof.relational_additional_prune&&parent.predicate!=none)count_add(&f.proof_counts->relational_prunes,1);
+      count_add(&f.proof_counts->refinement_pair_attempts,proof.pair_attempts);
+      count_add(&f.proof_counts->refinement_pair_completed,proof.pair_completed);
+      count_add(&f.proof_counts->refinement_pair_tightened,proof.pair_tightened);
+      count_add(&f.proof_counts->refinement_pair_fallbacks,proof.pair_fallbacks);
+      count_add(&f.proof_counts->refinement_pair_visits,proof.pair_visits);
+      if(proof.pair_additional_prune&&parent.predicate!=none)count_add(&f.proof_counts->refinement_pair_additional_prunes,1);
+    }
     count_add(&f.control->refinement_tightened_roots,proof.tightened_roots);
     count_add(&f.control->refinement_rejected_roots,proof.rejected_refinements);
     count_add(&f.control->refinement_fallback_frontiers,proof.fallback_frontiers);
@@ -363,16 +438,30 @@ __global__ void prepare_drafts(EngineView e,View f) {
   if(f.cover_visits){
     const auto proof_predicate=f.proof_proposals?
       proof_modules::checked_predicate(e,id,f.proof_proposals[job],selected):selected;
-    const auto covered=cover::interval_label(prune,id,region(e,id),proof_predicate,
+    const auto covered=cover::portfolio_label(prune,id,region(e,id),proof_predicate,
       prune.draft_region,offset(f.draft.refinement_stack,u64(2)*job*e.refinement_stack_capacity),
       e.refinement_stack_capacity,f.cover_visits);
+    if(f.proof_counts&&prune.point_screen&&prune.point_screen->attempted){const auto& q=*prune.point_screen;
+      if(q.attempted)count_add(&f.proof_counts->point_screen_attempts,q.attempted);
+      if(q.intersection_ready)count_add(&f.proof_counts->point_screen_intersections,q.intersection_ready);
+      if(q.first_complete)count_add(&f.proof_counts->point_screen_first_complete,q.first_complete);
+      if(q.first_qualified)count_add(&f.proof_counts->point_screen_first_qualified,q.first_qualified);
+      if(q.second_complete)count_add(&f.proof_counts->point_screen_second_complete,q.second_complete);
+      if(q.second_qualified)count_add(&f.proof_counts->point_screen_second_qualified,q.second_qualified);
+      if(q.mixed)count_add(&f.proof_counts->point_screen_mixed,q.mixed);
+      if(q.inconclusive)count_add(&f.proof_counts->point_screen_inconclusive,q.inconclusive);
+      if(q.first_visits)count_add(&f.proof_counts->point_screen_first_visits,q.first_visits);
+      if(q.second_visits)count_add(&f.proof_counts->point_screen_second_visits,q.second_visits);
+    }
     if(covered.attempted){
       count_add(&f.control->cover_attempts,1);
+      if(f.proof_counts)count_add(&f.proof_counts->cover_rival_attempts,covered.rival_covers);
       count_add(&f.control->cover_visits,covered.visited);
       count_add(&f.control->cover_feasible_cases,covered.feasible_cases);
       count_add(&f.control->cover_certified_cases,covered.certified_cases);
       if(covered.label>=0){
         count_add(&f.control->cover_additional_prunes,1);
+        if(f.proof_counts&&covered.rival_covers)count_add(&f.proof_counts->cover_rival_prunes,1);
         f.kinds[job]=1;f.prune_labels[job]=u32(covered.label);return;
       }
       count_add(&f.control->cover_failures,1);
@@ -419,7 +508,11 @@ __global__ void commit_drafts(EngineView e,View f,u64 maximum_expansions) {
         if(!e.status->error){
           if(cached!=none){
             if(e.arena.states[cached].phase!=3)fail(e,60);
-            else {parent.node=e.arena.states[cached].node;parent.phase=3;++e.status->terminal_hits;enqueue_finish(e,f,id);}
+            else {parent.node=e.arena.states[cached].node;parent.phase=3;
+              // Terminal-cache equality is score-word equality, not an explicit
+              // donor certificate over this projected feature guard.
+              if(f.gap_evidence)gap_evidence::complete_native_label(f.gap_evidence[id],true);
+              ++e.status->terminal_hits;enqueue_finish(e,f,id);}
           }else if(f.control->native_count>=f.batch)fail(e,61);
           else {f.native_ids[f.control->native_count++]=id;parent.phase=1;}
         }
@@ -427,6 +520,10 @@ __global__ void commit_drafts(EngineView e,View f,u64 maximum_expansions) {
     }else if(kind==1){
       if(!lane){u32 node=intern_node(e,{-1,f.prune_labels[job],0,0});
         if(node!=none){parent.node=node;parent.phase=3;++e.status->class_pruned_states;
+          // kind1 is published only after an existing whole-class proof over
+          // region(e,id), never a feasible-point proposal or pair-only fact.
+          if(f.gap_evidence)gap_evidence::complete_qualified_rule(f.gap_evidence[id],
+            {true,f.gap_context_supported,e.qualified_gap},true);
           if(parent.predicate==none)++e.status->terminal_gap_pruned_states;
           enqueue_finish(e,f,id);}
       }
@@ -443,13 +540,23 @@ __global__ void commit_drafts(EngineView e,View f,u64 maximum_expansions) {
         u64 before=0;if(!lane)before=e.status->state_creations;
         children[side]=intern_state_block(child,*child.draft,child.draft_region,child.draft_words,child.draft_positions,child.draft_residual,true);
         if(children[side]==none)return;
-        if(!lane){fresh[side]=e.status->state_creations!=before;add_draft_counts(e,*prepared_status);}
+        if(!lane){fresh[side]=e.status->state_creations!=before;
+          if(fresh[side]&&f.gap_evidence)gap_evidence::fresh_or_recycled(f.gap_evidence[children[side]]);
+          add_draft_counts(e,*prepared_status);}
         __syncthreads();
         if(e.status->error)return;
       }
       if(!lane){
         u32 selected=f.selected_predicates?f.selected_predicates[job]:parent.predicate;
         if(selected!=parent.predicate)++f.control->priority_split_changes;
+        // This is the sole first-publication boundary for a new split. Restored
+        // phase2 contexts never pass here and remain Unknown after later edges.
+        // Existing normalize/project correspondence transports both full-child
+        // residual certificates to the entire current projected guard: active
+        // predicates cover both cases, ordered prefix consumption is unchanged,
+        // and support projection only widens coordinates absent from residuals.
+        if(f.gap_evidence&&f.gap_context_supported&&e.qualified_gap)
+          gap_evidence::start_new_split(f.gap_evidence[id],parent.phase==0,true);
         parent.predicate=selected;parent.phase=2;f.queue.pending[id]=2;
         attach_edge(e,f,id,0,children[0],fresh[0]);attach_edge(e,f,id,1,children[1],fresh[1]);
         // Admit left before right; push right first to retain left-first LIFO.
@@ -473,9 +580,15 @@ __global__ void drain_completions(EngineView e,View f) {
         state.left>=e.status->nodes||state.right>=e.status->nodes){fail(e,62);return;}
       u32 predicate=state.predicate;std::int64_t feature=e.source.feature[predicate];if(e.source.missing[predicate])feature=-feature-2;
       u32 node=intern_node(e,{std::int32_t(feature),__float_as_uint(e.source.cut[predicate]),state.left,state.right});
-      if(node==none)return;state.node=node;state.phase=3;
+      if(node==none)return;
+      // Allocation refusal leaves PendingAllQualified/PendingBlocked intact.
+      if(f.gap_evidence)gap_evidence::finish_split(f.gap_evidence[id],state.phase==2,f.queue.pending[id],true);
+      state.node=node;state.phase=3;
     }
-    u32 edge=f.queue.wait_head[id];while(edge!=none){u32 next=f.queue.edge_next[edge];resolve_edge(e,f,edge/2,edge%2,state.node);if(e.status->error)return;edge=next;}
+    u32 edge=f.queue.wait_head[id];while(edge!=none){u32 next=f.queue.edge_next[edge];
+      resolve_edge(e,f,edge/2,edge%2,state.node,
+        f.gap_evidence?f.gap_evidence[id]:gap_evidence::Evidence::Unknown);
+      if(e.status->error)return;edge=next;}
     f.queue.wait_head[id]=none;++f.control->finish_head;
     if(id==f.control->root_state){e.status->root=state.node;e.status->complete=1;}
     else {
@@ -498,6 +611,7 @@ __global__ void reclaim_completed(EngineView e,View f,u64 needed_slots,u64 maxim
     if(id>=e.status->states||id==f.control->root_state||e.arena.states[id].phase!=3||
        !(f.queue.flags[id]&cached_once)||f.queue.wait_head[id]!=none||f.queue.pending[id]){fail(e,68);return;}
     if(!evict_completed_state(e,id))return;
+    if(f.gap_evidence)gap_evidence::fresh_or_recycled(f.gap_evidence[id]);
     f.queue.flags[id]=0;f.queue.pending[id]=0;f.queue.wait_head[id]=none;
     f.queue.edge_next[u64(id)*2]=none;f.queue.edge_next[u64(id)*2+1]=none;
     if(f.control->cache_tail-f.control->cache_head>maximum_cached)++f.control->cache_policy_evictions;
@@ -530,9 +644,10 @@ __global__ void labels_ready(EngineView e,View f) {
 __global__ void commit_native(EngineView e,View f) {
   if(blockIdx.x||threadIdx.x)return;e.status->request=0;
   for(;f.control->native_cursor<f.control->native_count;++f.control->native_cursor){u32 row=f.control->native_cursor,id=f.native_ids[row],label=f.native_labels[row];
-    if(label>=e.source.classes||e.arena.states[id].phase!=1){fail(e,64);return;}
+    if(label>=output_class_count(e)||e.arena.states[id].phase!=1){fail(e,64);return;}
     u32 node=intern_node(e,{-1,label,0,0});if(node==none)return;
     auto&state=e.arena.states[id];state.node=node;state.phase=3;
+    if(f.gap_evidence)gap_evidence::complete_native_label(f.gap_evidence[id],true);
     u32 previous=terminal_lookup(e,e.arena.words+u64(id)*e.source.classes,true,id);
     if(e.status->error)return;if(previous!=none&&e.arena.states[previous].node!=node){fail(e,65);return;}
     ++e.status->native_terminals;enqueue_finish(e,f,id);if(e.status->error)return;
@@ -559,16 +674,21 @@ inline growth::Outcome grow_state_queue_transaction(EngineView& e,
     std::unique_ptr<StateStorage>& states,NodeStorage& nodes,
     std::unique_ptr<QueueStorage>& queue,Buffer<Control>& control,Budget& budget,
     const Status& h,u64 minimum,u64 ceiling,const GrowthObserver& observer={},
-    const GrowthAllocationHook& hook={},u64 device_reserve=0) {
+    const GrowthAllocationHook& hook={},u64 device_reserve=0,
+    Buffer<gap_evidence::Evidence>* gap_evidence_owner=nullptr) {
   require(states&&queue&&states->capacity==queue->capacity,"adaptive coupled growth owner extents");
+  require(!gap_evidence_owner||(gap_evidence_owner->size==states->capacity&&gap_evidence_owner->data),
+          "adaptive gap evidence growth owner extent");
   growth::Outcome out;u32 retry=0;
   for(;;) {
     plan_growth(out,budget,states->capacity,minimum,ceiling,[&](u32 n){
-      return plus(plus(state_owner_bytes(e,n),growth::queue_bytes(n)),sizeof(Control));
+      return plus(plus(plus(state_owner_bytes(e,n),growth::queue_bytes(n)),sizeof(Control)),
+        gap_evidence_owner?multiply(n,sizeof(gap_evidence::Evidence)):0);
     },retry,device_reserve,observer);
     std::unique_ptr<StateStorage> fresh_states;
     std::unique_ptr<QueueStorage> fresh_queue;
     Buffer<Control> fresh_control;
+    Buffer<gap_evidence::Evidence> fresh_gap_evidence;
     try {
       if(hook)hook("states");
       fresh_states=std::make_unique<StateStorage>(budget,out.plan.selected,e.domain.numeric_features,
@@ -577,10 +697,15 @@ inline growth::Outcome grow_state_queue_transaction(EngineView& e,
       fresh_queue=std::make_unique<QueueStorage>(budget,out.plan.selected);
       if(hook)hook("control");
       fresh_control=Buffer<Control>(budget,1);
+      if(gap_evidence_owner){
+        if(hook)hook("gap_evidence");
+        fresh_gap_evidence=Buffer<gap_evidence::Evidence>(budget,out.plan.selected);
+        fresh_gap_evidence.zero();
+      }
     }catch(const AllocationRefusal&) {
       // Partially constructed Buffer members already unwind. Release complete
       // staged owners before publishing/refitting; live bindings never changed.
-      fresh_states.reset();fresh_queue.reset();fresh_control.reset();
+      fresh_states.reset();fresh_queue.reset();fresh_control.reset();fresh_gap_evidence.reset();
       ++out.allocation_refusals;++out.transaction_rollbacks;
       if(observer)observer(out);
       retry=growth::retry_ceiling(out.plan);
@@ -588,6 +713,7 @@ inline growth::Outcome grow_state_queue_transaction(EngineView& e,
       continue;
     }
     copy(fresh_control,control,1);
+    if(gap_evidence_owner)copy(fresh_gap_evidence,*gap_evidence_owner,h.states);
     copy(fresh_queue->flags,queue->flags,h.states);
     copy(fresh_queue->pending,queue->pending,h.states);
     copy(fresh_queue->wait_head,queue->wait_head,h.states);
@@ -597,8 +723,10 @@ inline growth::Outcome grow_state_queue_transaction(EngineView& e,
     EngineView staged=stage_state_growth(e,*states,*fresh_states,nodes,h);
     // All device preparation succeeded. No launch observes the short host-only
     // swap sequence; the next view has matching state/queue/control owners.
-    states.swap(fresh_states);queue.swap(fresh_queue);control.swap(fresh_control);e=staged;
-    fresh_states.reset();fresh_queue.reset();fresh_control.reset();out.complete=true;
+    states.swap(fresh_states);queue.swap(fresh_queue);control.swap(fresh_control);
+    if(gap_evidence_owner)gap_evidence_owner->swap(fresh_gap_evidence);
+    e=staged;
+    fresh_states.reset();fresh_queue.reset();fresh_control.reset();fresh_gap_evidence.reset();out.complete=true;
     if(observer)observer(out);return out;
   }
 }
@@ -672,7 +800,11 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
     std::unique_ptr<NodeStorage>& nodes,Budget& budget,Limits limits,
     const NativePredict& native,bool direct,const Progress& progress,
     const std::function<void()>& check_gate,const grid::HostCatalog* coverage_catalog,
-    Buffer<Status>* status_owner) {
+    Buffer<Status>* status_owner,Buffer<gap_evidence::Evidence>* gap_evidence_owner) {
+  // This optional census owns no source authority and is never checkpointed.
+  // An empty owner prevents importing evidence from another run/generation.
+  require(!gap_evidence_owner||(!gap_evidence_owner->data&&!gap_evidence_owner->size&&!gap_evidence_owner->budget),
+          "gap evidence owner must be empty on run entry");
   require(limits.batch_capacity>0&&limits.batch_capacity<=65536&&native,
           "frontier batch declaration");
   require(!limits.maximum_batch_capacity||
@@ -692,6 +824,7 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
   }
   auto queue=std::make_unique<detail::QueueStorage>(budget,states->capacity);
   Buffer<detail::Control> control(budget,1);control.zero();
+  Buffer<detail::ProofCounters> proof_counts(budget,1);proof_counts.zero();
   bool resumed=false;
   if(!limits.resume_from.empty()) {
     require(status_owner&&status_owner->data==e.status,"resume requires current status owner");
@@ -700,12 +833,24 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
                            budget,limits.max_states,limits.max_nodes);
     resumed=true;
   }
+  // A successful caller check must establish actual same-process native gate
+  // authority for this source/objective. A nonempty function alone is no proof.
+  // Future composed/narrower-score contracts require separate correspondence;
+  // keep their census conservative rather than treating structural words as labels.
+  const u32 native_scores=e.source.native_margin_classes?e.source.native_margin_classes:e.source.classes;
+  const bool gap_context_supported=e.qualified_gap&&bool(check_gate)&&!direct&&
+      e.source.classes>1&&native_scores==e.source.classes&&output_class_count(e)==e.source.classes;
+  if(gap_evidence_owner){
+    if(check_gate)check_gate();
+    Buffer<gap_evidence::Evidence> fresh(budget,states->capacity);fresh.zero();
+    gap_evidence_owner->swap(fresh); // All restored contexts begin Unknown.
+  }
   checkpoint::AsyncWriter checkpoint_writer;
   u32 initial=limits.batch_capacity;u64 initial_backoffs=0;
   if(limits.dynamic_batching) {
     auto initial_status=detail::read_one(e.status);detail::Control empty{};
     while(initial>1&&!detail::batch_resources(e,initial_status,empty,budget,initial,limits.max_states,
-                                            detail::scratch_bytes(e,initial,limits.split_selection))) {
+                                            detail::scratch_bytes(e,initial,limits.split_selection),gap_evidence_owner!=nullptr)) {
       initial=(initial+1)/2;++initial_backoffs;
     }
   }
@@ -728,7 +873,7 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
   const bool tune_draft=!limits.draft_threads&&tuner.maximum_draft>1;
   const bool tune_cache=limits.dynamic_cache;
   const bool tune_refinement=limits.dynamic_refinement&&e.qualified_gap&&e.refinement_maximum_visits>0;
-  const u32 cover_maximum=u32(std::min<u64>(UINT32_MAX,u64(e.refinement_maximum_visits)*2));
+  const u32 cover_maximum=u32(std::min<u64>(UINT32_MAX,u64(e.refinement_maximum_visits)*(e.rival_cover_enabled?2ull*(e.source.classes+1ull):2ull)));
   const bool tune_cover=limits.dynamic_cover&&e.qualified_gap&&cover_maximum>0;
   tuner.cache=tuner.best_cache=tune_cache?states->capacity:limits.completed_cache_limit;
   tuner.refinement=tuner.best_refinement=e.qualified_gap?
@@ -740,7 +885,8 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
     scratch->jobs.data,scratch->kinds.data,scratch->prune_labels.data,
     scratch->native_ids.data,scratch->native_labels.data,scratch->capacity,tuner.refinement,
     limits.split_selection,scratch->selected_predicates.data,scratch->split_scores.data,limits.oldest_ready_jobs,tuner.cover,
-    have_proposals?scratch->proof_proposals.data:nullptr};};
+    have_proposals?scratch->proof_proposals.data:nullptr,proof_counts.data,
+    gap_evidence_owner?gap_evidence_owner->data:nullptr,gap_context_supported};};
   Snapshot result{};result.batch_memory_backoffs=initial_backoffs;
   result.resumed=resumed;
   result.batch_adjustments=initial!=limits.batch_capacity;detail::Control current{};
@@ -788,11 +934,38 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
     result.best_draft_threads=tuner.best_draft;
     result.completed_cache_limit=tuner.cache;result.refinement_visit_budget=tuner.refinement;
     result.cache_policy_evictions=current.cache_policy_evictions;
+    const auto observed_proofs=detail::read_one(proof_counts.data);
     result.refinement_attempts=current.refinement_attempts;result.refinement_visits=current.refinement_visits;
+    result.unary_attempts=observed_proofs.unary_attempts;result.unary_visits=observed_proofs.unary_visits;
+    result.unary_optimistic_rejections=observed_proofs.unary_optimistic_rejections;
+    result.unary_groups=observed_proofs.unary_groups;result.unary_completed=observed_proofs.unary_completed;
+    result.unary_fallbacks=observed_proofs.unary_fallbacks;result.unary_prunes=observed_proofs.unary_prunes;
+    result.relational_attempts=observed_proofs.relational_attempts;result.relational_visits=observed_proofs.relational_visits;
+    result.relational_pairs=observed_proofs.relational_pairs;result.relational_completed=observed_proofs.relational_completed;
+    result.relational_fallbacks=observed_proofs.relational_fallbacks;result.relational_prunes=observed_proofs.relational_prunes;
+    result.refinement_pair_attempts=observed_proofs.refinement_pair_attempts;
+    result.refinement_pair_completed=observed_proofs.refinement_pair_completed;
+    result.refinement_pair_tightened=observed_proofs.refinement_pair_tightened;
+    result.refinement_pair_fallbacks=observed_proofs.refinement_pair_fallbacks;
+    result.refinement_pair_visits=observed_proofs.refinement_pair_visits;
+    result.refinement_pair_additional_prunes=observed_proofs.refinement_pair_additional_prunes;
+
     result.refinement_tightened_roots=current.refinement_tightened_roots;
     result.refinement_rejected_roots=current.refinement_rejected_roots;
     result.refinement_fallback_frontiers=current.refinement_fallback_frontiers;
     result.refinement_additional_prunes=current.refinement_additional_prunes;
+    result.cover_rival_attempts=observed_proofs.cover_rival_attempts;
+    result.cover_rival_prunes=observed_proofs.cover_rival_prunes;
+    result.point_screen_attempts=observed_proofs.point_screen_attempts;
+    result.point_screen_intersections=observed_proofs.point_screen_intersections;
+    result.point_screen_first_complete=observed_proofs.point_screen_first_complete;
+    result.point_screen_first_qualified=observed_proofs.point_screen_first_qualified;
+    result.point_screen_second_complete=observed_proofs.point_screen_second_complete;
+    result.point_screen_second_qualified=observed_proofs.point_screen_second_qualified;
+    result.point_screen_mixed=observed_proofs.point_screen_mixed;
+    result.point_screen_inconclusive=observed_proofs.point_screen_inconclusive;
+    result.point_screen_first_visits=observed_proofs.point_screen_first_visits;
+    result.point_screen_second_visits=observed_proofs.point_screen_second_visits;
     result.cover_visit_budget=tuner.cover;
     result.cover_attempts=current.cover_attempts;result.cover_visits=current.cover_visits;
     result.cover_feasible_cases=current.cover_feasible_cases;result.cover_certified_cases=current.cover_certified_cases;
@@ -920,7 +1093,7 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
             "frontier scratch resize ownership boundary");
     if(n<=scratch->capacity)return true;
     if(!detail::batch_resources(e,result.status,current,budget,n,limits.max_states,
-                               detail::scratch_bytes(e,n,limits.split_selection))) {
+                               detail::scratch_bytes(e,n,limits.split_selection),gap_evidence_owner!=nullptr)) {
       ++result.batch_growth_refusals;return false;
     }
     // Optional allocation failure preserves all old owners and does not abort
@@ -1065,17 +1238,17 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
       }
       if(limits.dynamic_batching) {
         u32 proposed=u32(std::min<u64>(tuner.active,current.ready_count)),affordable=proposed;
-        while(affordable>1&&!detail::batch_resources(e,result.status,current,budget,affordable,limits.max_states,0))
+        while(affordable>1&&!detail::batch_resources(e,result.status,current,budget,affordable,limits.max_states,0,gap_evidence_owner!=nullptr))
           affordable=(affordable+1)/2;
         bool pressure=affordable<proposed||
-          !detail::batch_resources(e,result.status,current,budget,affordable,limits.max_states,0);
+          !detail::batch_resources(e,result.status,current,budget,affordable,limits.max_states,0,gap_evidence_owner!=nullptr);
         if(pressure) {
           set_active(affordable);++result.batch_memory_backoffs;
           shrink_scratch(affordable);refresh();
           // Releasing the historical peak owner changes the actual headroom.
           // Recheck this smaller selection before publishing any draft work.
           affordable=u32(std::min<u64>(tuner.active,current.ready_count));
-          while(affordable>1&&!detail::batch_resources(e,result.status,current,budget,affordable,limits.max_states,0))
+          while(affordable>1&&!detail::batch_resources(e,result.status,current,budget,affordable,limits.max_states,0,gap_evidence_owner!=nullptr))
             affordable=(affordable+1)/2;
           set_active(affordable);shrink_scratch(affordable);
           invalidate_pair();
@@ -1121,7 +1294,7 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
       // labels/IDs/cursors and all parent dependencies retain their owners.
       while(limits.dynamic_batching&&
             (needed>limits.max_states||(needed>states->capacity&&
-             !detail::batch_resources(e,result.status,current,budget,current.expanding,limits.max_states,0)))&&
+             !detail::batch_resources(e,result.status,current,budget,current.expanding,limits.max_states,0,gap_evidence_owner!=nullptr)))&&
             current.jobs>current.cursor&&(current.jobs>1||scratch->capacity>1)) {
         u32 remaining=current.jobs-current.cursor;
         u32 keep=current.cursor+(remaining>1?(remaining+1)/2:0);
@@ -1146,7 +1319,7 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
         // publication, before committing a new owner; private drafts persist.
         if(limits.dynamic_batching&&current.jobs>current.cursor&&
            (current.jobs>1||scratch->capacity>1)&&
-           !detail::batch_resources(e,result.status,current,budget,current.expanding,limits.max_states,0)) {
+           !detail::batch_resources(e,result.status,current,budget,current.expanding,limits.max_states,0,gap_evidence_owner!=nullptr)) {
           retry_selection=true;break;
         }
         const u64 refusals=result.growth_allocation_refusals,rollbacks=result.growth_transaction_rollbacks;
@@ -1159,7 +1332,7 @@ inline Snapshot run(EngineView& e,std::unique_ptr<StateStorage>& states,
           result.growth_transaction_rollbacks=rollbacks+out.transaction_rollbacks;publish();
         };
         growth([&]{detail::grow_state_queue_transaction(e,states,*nodes,queue,control,budget,
-          result.status,needed,limits.max_states,observe,{},multiply(multiply(current.expanding,e.source.classes),8));});++result.state_growths;
+          result.status,needed,limits.max_states,observe,{},multiply(multiply(current.expanding,e.source.classes),8),gap_evidence_owner);});++result.state_growths;
         refresh();
       }
       if(retry_selection)continue;

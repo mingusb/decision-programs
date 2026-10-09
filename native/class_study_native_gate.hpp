@@ -33,7 +33,9 @@ struct SetupOwner {
 };
 }
 // Before process startup set CUDA_INJECTION64_PATH to the exact pinned helper
-// and DP_CUPTI_MODULE_CAPTURE_DIR to a fresh existing capture directory. The
+// and GH_CUPTI_MODULE_CAPTURE_DIR (the pinned external helper ABI) to a fresh
+// existing capture directory. An optional DP_CUPTI_MODULE_CAPTURE_DIR alias
+// must name the same directory. The
 // snapshot must be a fresh filename in that directory. Unsupported setups
 // return a null authorization with the exact refusal; ordinary conversion may
 // continue without this optional shortcut. The factory never trains a model.
@@ -50,9 +52,13 @@ inline NativeGateSetup try_qualify_native_gap(
   require(eligibility.reviewed_shape_available,eligibility.reason.c_str());
   require(source_sha==native_softprob_gap::source_sha,"native gate source has no qualified native-margin correspondence contract");
   checked_setup_path(library_path);checked_setup_path(helper_path);checked_setup_path(snapshot_path);checked_setup_path(qualification_path);
-  const char*injection=std::getenv("CUDA_INJECTION64_PATH");const char*capture=std::getenv("DP_CUPTI_MODULE_CAPTURE_DIR");
+  const char*injection=std::getenv("CUDA_INJECTION64_PATH");
+  // The immutable qualified helper reads its original environment ABI.
+  const char*capture=std::getenv("GH_CUPTI_MODULE_CAPTURE_DIR");
+  const char*capture_alias=std::getenv("DP_CUPTI_MODULE_CAPTURE_DIR");
   require(injection&&*injection&&capture&&*capture,"native gate requires capture injection before process startup");
   checked_setup_path(injection);checked_setup_path(capture);
+  if(capture_alias&&*capture_alias){checked_setup_path(capture_alias);require(std::filesystem::canonical(capture_alias)==std::filesystem::canonical(capture),"native gate capture directory aliases differ");}
   require(std::filesystem::canonical(injection)==std::filesystem::canonical(helper_path),"native gate injection helper path differs");
   require(std::filesystem::canonical(capture)==std::filesystem::canonical(snapshot_path.parent_path()),"native gate snapshot and capture directories differ");
   const auto qualification_bytes=dpnative::read_text(qualification_path);

@@ -49,6 +49,13 @@ inline ConversionOptions parse_conversion_options(const nlohmann::json& input,
     else if(key=="completed_cache_limit") {if(value.is_null())output.completed_cache_limit.reset();else output.completed_cache_limit=std::uint32_t(option_integer(value,key,UINT32_MAX));}
     else if(key=="refinement_visit_budget") {if(value.is_null())output.refinement_visit_budget.reset();else output.refinement_visit_budget=std::uint32_t(option_integer(value,key,UINT32_MAX));}
     else if(key=="cover_visit_budget") {if(value.is_null())output.cover_visit_budget.reset();else output.cover_visit_budget=std::uint32_t(option_integer(value,key,UINT32_MAX));}
+    else if(key=="joint_bounds"||key=="rival_covers"||key=="relational_bounds"||key=="unary_bounds") {
+      option_require(value.is_boolean(),key+" must be Boolean");
+      if(key=="joint_bounds")output.joint_bounds=value.get<bool>();
+      else if(key=="rival_covers")output.rival_covers=value.get<bool>();
+      else if(key=="relational_bounds")output.relational_bounds=value.get<bool>();
+      else output.unary_bounds=value.get<bool>();
+    }
     else if(key=="completion_estimate_enabled") {
       option_require(value.is_boolean(),key+" must be Boolean");output.completion_estimate_enabled=value.get<bool>();
     }
@@ -171,6 +178,7 @@ inline nlohmann::json describe_conversion_options(const ConversionOptions& optio
     {"completed_cache_limit",options.completed_cache_limit?nlohmann::json(*options.completed_cache_limit):nlohmann::json(nullptr)},
     {"refinement_visit_budget",options.refinement_visit_budget?nlohmann::json(*options.refinement_visit_budget):nlohmann::json(nullptr)},
     {"cover_visit_budget",options.cover_visit_budget?nlohmann::json(*options.cover_visit_budget):nlohmann::json(nullptr)},
+    {"joint_bounds",options.joint_bounds},{"rival_covers",options.rival_covers},{"relational_bounds",options.relational_bounds},{"unary_bounds",options.unary_bounds},
     {"checkpoint_path",options.checkpoint_path},{"resume_from",options.resume_from},
     {"checkpoint_interval_seconds",options.checkpoint_interval_seconds},
     {"checkpoint_on_completion",options.checkpoint_on_completion},

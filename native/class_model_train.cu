@@ -1,3 +1,4 @@
+#include "class_native_model_json.hpp"
 // One configured FIT-only native CUDA XGBoost fit on the common dense descriptor.
 // The native C API sequence is inherited from the qualified MNIST trainer;
 // dataset shape, labels, class count and parameters are caller declarations.
@@ -46,7 +47,7 @@ J train(const fs::path& planpath,const std::string& pin,const fs::path& out,cons
   const auto& hp=p.at("hyperparameters");api.configure(hp,data.K);api.fit(hp.at("rounds").get<U>());
   auto config=J::parse(api.configuration());need(config.at("learner").at("generic_param").at("device")=="cuda:0"&&config.at("learner").at("gradient_booster").at("updater").size()==1&&config.at("learner").at("gradient_booster").at("updater")[0].at("name")=="grow_gpu_hist","native training updater differs from the required CUDA updater");
   int rounds=-1;api.check(api.symbol<int(*)(TrainingApi::H,int*)>("XGBoosterBoostedRounds")(api.model,&rounds),"native completed rounds");need(rounds==hp.at("rounds").get<int>(),"native completed round count differs");
-  api.save(out/"model.json");auto model_bytes=read_text(out/"model.json");auto model=J::parse(model_bytes);
+  api.save(out/"model.json");auto model_bytes=read_text(out/"model.json");auto model=dp_native_json::parse(model_bytes);
   need(model.at("learner").at("objective").at("name")=="multi:softmax"&&model.at("learner").at("learner_model_param").at("num_feature").get<std::string>()==std::to_string(data.F)&&model.at("learner").at("learner_model_param").at("num_class").get<std::string>()==std::to_string(data.K),"saved native objective/shape differs");
   atomic_json(out/"configuration.json",config);recheck_model_dataset(data);
   need(source_manifest()==p.at("checked_source_manifest")&&sha256(mn_read(planpath))==pin&&sha256(read_text(exe))==p.at("executable_sha256").get<std::string>()&&sha256(read_text(p.at("native_library_path").get<std::string>()))==p.at("native_library_sha256").get<std::string>(),"final training pins differ");

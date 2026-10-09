@@ -7,6 +7,7 @@
 // interval construction. Keep the live Oracle/context immutable during its use.
 #include "class_io.hpp"
 #include "class_native_softprob_eligibility.hpp"
+#include "class_native_softprob_contract.hpp"
 #include <cfenv>
 #include <dlfcn.h>
 #include <link.h>
@@ -46,7 +47,7 @@ inline int strict_interval_class(const Bounds& lower,const Bounds& upper)noexcep
   static_assert(sizeof(float)==4&&sizeof(double)==8&&std::numeric_limits<float>::is_iec559&&std::numeric_limits<float>::digits==24&&std::numeric_limits<double>::is_iec559&&std::numeric_limits<double>::digits==53);
   if(!environment_ok())return -1;
   for(int c=0;c<7;++c)if(!std::isfinite(lower[c])||!std::isfinite(upper[c])||lower[c]>upper[c]||lower[c]<-10.0f||upper[c]>10.0f)return -1;
-  for(int winner=0;winner<7;++winner){bool strict=true;for(int c=0;c<7;++c)if(c!=winner){volatile double gap=double(lower[winner])-double(upper[c]);if(gap<0x1p-10){strict=false;break;}}if(strict)return winner;}
+  for(int winner=0;winner<7;++winner){bool strict=true;for(int c=0;c<7;++c)if(c!=winner){volatile double gap=double(lower[winner])-double(upper[c]);if(gap<native_softprob_gap::computed_gap_minimum){strict=false;break;}}if(strict)return winner;}
   return -1;
 }
 inline json runtime_identity(const std::string& source,const json& evidence){
@@ -97,11 +98,13 @@ class RuntimeGate {
   static RuntimeGate qualify(const std::string& source,const json& live_oracle_evidence,const fs::path& loaded_helper,const fs::path& fresh_snapshot){
     RuntimeGate gate;try{
       detail::require(detail::environment_ok(),"gap host floating-point environment differs");gate.runtime_=detail::runtime_identity(source,live_oracle_evidence);const auto helper_path=fs::canonical(loaded_helper);detail::require(dpnative::sha256(dpnative::read_text(helper_path))==helper_sha,"capture helper binary is not pinned");
-      void* handle=dlopen(helper_path.c_str(),RTLD_NOW|RTLD_NOLOAD|RTLD_LOCAL);detail::require(handle!=nullptr,"capture helper is not loaded in this process");gate.helper_=std::shared_ptr<void>(handle,[](void* p){if(p)dlclose(p);});dlerror();void* symbol=dlsym(handle,"dp_softprob_capture_snapshot");const char* error=dlerror();detail::require(!error&&symbol,"capture helper snapshot symbol unavailable");Dl_info info{};detail::require(dladdr(symbol,&info)!=0&&info.dli_fname&&fs::canonical(info.dli_fname)==helper_path,"snapshot symbol originates in another object");
+      void* handle=dlopen(helper_path.c_str(),RTLD_NOW|RTLD_NOLOAD|RTLD_LOCAL);detail::require(handle!=nullptr,"capture helper is not loaded in this process");gate.helper_=std::shared_ptr<void>(handle,[](void* p){if(p)dlclose(p);});dlerror();// The pinned external helper retains this ABI name; changing the lookup
+      // without rebuilding and qualifying that binary would disable the gate.
+      void* symbol=dlsym(handle,"gh_softprob_capture_snapshot");const char* error=dlerror();detail::require(!error&&symbol,"capture helper snapshot symbol unavailable");Dl_info info{};detail::require(dladdr(symbol,&info)!=0&&info.dli_fname&&fs::canonical(info.dli_fname)==helper_path,"snapshot symbol originates in another object");
       const auto library_path=detail::loaded_library();detail::require(!fs::exists(fresh_snapshot)&&fs::is_directory(fresh_snapshot.parent_path()),"capture snapshot path must be fresh in an existing directory");using Snapshot=int(*)(const char*);auto snapshot_fn=reinterpret_cast<Snapshot>(symbol);const auto snapshot_path=fs::absolute(fresh_snapshot);detail::require(snapshot_fn(snapshot_path.c_str())==1,"same-process capture helper is unresolved or incomplete");
       const auto snapshot_bytes=dpnative::read_text(snapshot_path);const auto snapshot=json::parse(snapshot_bytes);const fs::path ledger=snapshot.at("capture_ledger_path").get<std::string>();const auto prefix=detail::read_prefix(ledger,detail::unsigned_integer(snapshot.at("capture_ledger_prefix_bytes")));const auto process=uint64_t(getpid());auto capture=detail::validate_capture(snapshot,prefix,ledger.parent_path(),process);
       detail::require(dpnative::sha256(dpnative::read_text(helper_path))==helper_sha&&dpnative::sha256(dpnative::read_text(library_path))==library_sha&&dpnative::read_text(snapshot_path)==snapshot_bytes,"qualification input changed during capture validation");
-      gate.receipt_={{"schema","native-softprob-gap-runtime-gate-1"},{"enabled",true},{"process_id",process},{"runtime",gate.runtime_},{"helper_path",helper_path.string()},{"helper_sha256",helper_sha},{"loaded_library_path",library_path},{"snapshot_path",snapshot_path.string()},{"snapshot_sha256",dpnative::sha256(snapshot_bytes)},{"capture",capture},{"computed_fp64_gap_minimum",0x1p-10},{"all_endpoints_absolute_maximum",10},{"fixed_tie_shortcut",false},{"theorem","symmetric_exp_relative_2^-16_div_relative_2^-20_true_gap_2^-11"},{"ordinary_nvidia_instruction_contracts_trusted",true},{"future_process_reuse_permitted",false}};
+      gate.receipt_={{"schema","native-softprob-gap-runtime-gate-1"},{"enabled",true},{"process_id",process},{"runtime",gate.runtime_},{"helper_path",helper_path.string()},{"helper_sha256",helper_sha},{"loaded_library_path",library_path},{"snapshot_path",snapshot_path.string()},{"snapshot_sha256",dpnative::sha256(snapshot_bytes)},{"capture",capture},{"computed_fp64_gap_minimum",native_softprob_gap::computed_gap_minimum},{"representable_shift_gap_minimum",native_softprob_gap::representable_shift_gap},{"all_endpoints_absolute_maximum",10},{"fixed_tie_shortcut",false},{"theorem","symmetric_exp_relative_2^-16_div_relative_2^-20_representable_shift_3_times_2^-16"},{"ordinary_nvidia_instruction_contracts_trusted",true},{"future_process_reuse_permitted",false}};
       gate.binding_=dpnative::sha256(gate.receipt_.dump());gate.receipt_["binding_sha256"]=gate.binding_;gate.process_=process;gate.qualified_=true;
     }catch(const std::exception& e){gate.qualified_=false;gate.process_=0;gate.binding_.clear();gate.helper_.reset();gate.receipt_={{"schema","native-softprob-gap-runtime-gate-1"},{"enabled",false},{"reason",e.what()},{"exact_fallback_required",true}};}
     return gate;

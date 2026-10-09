@@ -80,8 +80,8 @@ Tree read(const std::string& b, Limits limits) {
     } else {
       need(v.label == -1 && v.feature >= 0 && U(v.feature) < f,
            "branch label/feature differs from completed axis schema");
-      need(v.missing <= 1 && (v.cut & 0x7f800000U) != 0x7f800000U,
-           "nonfinite cut or invalid missing direction is unsupported");
+      need(v.missing <= 1 && (v.cut & 0x7fffffffU) <= 0x7f800000U,
+           "NaN cut or invalid missing direction is unsupported");
       need(v.left < n && v.right < n && v.left != v.right,
            "branch children are invalid");
       need(++parents[v.left] == 1 && ++parents[v.right] == 1,

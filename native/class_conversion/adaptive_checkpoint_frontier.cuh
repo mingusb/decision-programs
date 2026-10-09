@@ -162,7 +162,7 @@ __global__ void check_payload(EngineView e,detail::QueueView q,const Control*con
   const auto n=e.arena.nodes[id];if(v.node_seen[id]!=1){reject(v,36);continue;}
   if(n.feature==-1){if(n.payload>=e.source.classes)reject(v,37);}
   else{const auto coordinate=n.feature<-1?-std::int64_t(n.feature)-2:std::int64_t(n.feature);
-   if(coordinate<0||u64(coordinate)>=e.source.features||!isfinite(__uint_as_float(n.payload))||n.left>=id||n.right>=id)reject(v,38);}
+   if(coordinate<0||u64(coordinate)>=e.source.features||isnan(__uint_as_float(n.payload))||n.left>=id||n.right>=id)reject(v,38);}
  }
 }
 inline void validate_gpu(EngineView e,QueueStorage&q,const Buffer<Control>&control,Budget&budget,const Status&h){

@@ -1,4 +1,5 @@
 #pragma once
+#include "../class_native_model_json.hpp"
 
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
@@ -123,7 +124,7 @@ inline SourceData read_source(const fs::path& path) {
     SourceData out;
     out.bytes = read_text(path);
     out.identity = sha256(out.bytes);
-    auto document = json::parse(out.bytes);
+    auto document = dp_native_json::parse(out.bytes);
     auto& learner = document.at("learner");
     auto& booster = learner.at("gradient_booster");
     auto& parameters = learner.at("learner_model_param");

@@ -86,6 +86,41 @@ theorem common_winner_cover
   obtain ⟨j, hj⟩ := covers x hx
   exact certified j x hx hj
 
+/- Two nonempty certified subsets with different labels exclude a uniform
+   class on the parent. They need not cover the parent or be disjoint. -/
+theorem different_certified_parts_exclude_uniform
+    (region left right : X → Prop) (predict : X → Label) (a b : Label)
+    (leftInside : ∀ x, left x → region x) (rightInside : ∀ x, right x → region x)
+    (leftNonempty : ∃ x, left x) (rightNonempty : ∃ x, right x)
+    (leftLabel : ∀ x, left x → predict x = a)
+    (rightLabel : ∀ x, right x → predict x = b) (different : a ≠ b) :
+    ¬ ∃ winner, ∀ x, region x → predict x = winner := by
+  intro ⟨winner, uniform⟩
+  obtain ⟨x, hx⟩ := leftNonempty
+  obtain ⟨y, hy⟩ := rightNonempty
+  apply different
+  calc
+    a = predict x := (leftLabel x hx).symm
+    _ = winner := uniform x (leftInside x hx)
+    _ = predict y := (uniform y (rightInside y hy)).symm
+    _ = b := rightLabel y hy
+
+/- Opposing score bounds refute a positive-gap proof on a nonempty cell.
+   Scores use a common exact integer scale. This says nothing about native
+   class ties or whether the parent has more than one predicted class. -/
+theorem opposing_bounds_refute_positive_gap
+    (cell : X → Prop) (winner rival : X → Int) (upper lower gap : Int)
+    (nonempty : ∃ x, cell x) (positive : 0 < gap) (opposed : upper ≤ lower)
+    (winnerBound : ∀ x, cell x → winner x ≤ upper)
+    (rivalBound : ∀ x, cell x → lower ≤ rival x) :
+    ¬ ∀ x, cell x → gap ≤ winner x - rival x := by
+  intro certificate
+  obtain ⟨x, hx⟩ := nonempty
+  have hw := winnerBound x hx
+  have hr := rivalBound x hx
+  have hg := certificate x hx
+  omega
+
 /- A proven class certificate remains valid on any contained region. -/
 theorem certificate_restricts
     (large small : X → Prop) (predict : X → Label) (winner : Label)
@@ -125,56 +160,14 @@ theorem sound_method_portfolio
   obtain ⟨m, hm⟩ := coverage x hx
   exact sound m x hx hm
 
-/- Strict-improvement witness in exact small integer arithmetic: two trees
-   sharing a predicate cancel. This proves the algebraic example only; it is
-   not a GPU/native-runtime test or a general floating-point cancellation law. -/
-def leftContribution (p : Bool) : Int := if p then 1 else -1
-def rightContribution (p : Bool) : Int := if p then -1 else 1
-
-theorem common_predicate_cancellation (p : Bool) :
-    leftContribution p + rightContribution p = 0 := by
-  cases p <;> decide
-
-/- Permitting mutually inconsistent predicate outcomes introduces a spurious
-   value of two, whereas every feasible same-predicate output is zero. -/
-theorem independent_extrema_are_strictly_looser :
-    leftContribution true + rightContribution false = 2 ∧
-    (∀ p, leftContribution p + rightContribution p = 0) := by
-  constructor
-  · decide
-  · exact common_predicate_cancellation
-
-def bitValue (p : Bool) : Int := if p then 1 else 0
-def exampleWinner (a b : Bool) : Int := 2 + bitValue a + bitValue b
-
-/- Every rival can have its own two-case cover. The two predicates are exact
-   Boolean outcomes of numeric comparisons; this does not quantize inputs. -/
-theorem two_rival_example (a b : Bool) :
-    1 ≤ exampleWinner a b - 2 * bitValue a ∧
-    1 ≤ exampleWinner a b - 2 * bitValue b := by
-  cases a <;> cases b <;> decide
-
-theorem rival_a_conditioned_bound (a b : Bool) :
-    1 ≤ 2 - bitValue a ∧
-    2 - bitValue a ≤ exampleWinner a b - 2 * bitValue a := by
-  cases a <;> cases b <;> decide
-
-theorem rival_b_conditioned_bound (a b : Bool) :
-    1 ≤ 2 - bitValue b ∧
-    2 - bitValue b ≤ exampleWinner a b - 2 * bitValue b := by
-  cases a <;> cases b <;> decide
-
 #print axioms restricted_hull_tighter
 #print axioms ordered_block_encloses
 #print axioms enlarge_candidates_preserves_soundness
 #print axioms common_winner_cover
+#print axioms different_certified_parts_exclude_uniform
+#print axioms opposing_bounds_refute_positive_gap
 #print axioms certificate_restricts
 #print axioms rival_specific_covers
 #print axioms sound_method_portfolio
-#print axioms common_predicate_cancellation
-#print axioms independent_extrema_are_strictly_looser
-#print axioms two_rival_example
-#print axioms rival_a_conditioned_bound
-#print axioms rival_b_conditioned_bound
 
 end RegionEnvelope

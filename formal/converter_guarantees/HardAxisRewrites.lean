@@ -2,41 +2,40 @@ import CorrectnessCompletion
 import DecisionEquations
 
 /-! Exact hard-domain reductions. Integer numeric coordinates are preprocessed
-ranks; categorical coordinates are exactly one valid member of each group.
+ranks, with raw missing/NaN routing outside this model. Each categorical
+coordinate is exactly one valid member of its group.
 Scope laws concern only their stated box, never all incoming DAG paths by
 implication. No sampling, approximate comparison or floating reassociation. -/
 namespace ConverterHardAxisRewrites
 open ConverterGuarantees
-variable {L : Type}
+variable {L F G : Type} {C : G → Type}
 
-structure Cell where
-  numeric : Fin 10 → Int
-  wilderness : Fin 4
-  soil : Fin 40
+structure Cell (F G : Type) (C : G → Type) where
+  numeric : F → Int
+  categorical : (g : G) → C g
 
-inductive Question where
-  | numeric : Fin 10 → Int → Question
-  | wilderness : Fin 4 → Question
-  | soil : Fin 40 → Question
+inductive Question (F G : Type) (C : G → Type) where
+  | numeric : F → Int → Question F G C
+  | categorical : (g : G) → C g → Question F G C
 
-def truth : Question → Cell → Bool
+variable [∀ g, DecidableEq (C g)]
+
+def truth : Question F G C → Cell F G C → Bool
   | .numeric f cut, x => decide (x.numeric f < cut)
-  | .wilderness category, x => decide (x.wilderness ≠ category)
-  | .soil category, x => decide (x.soil ≠ category)
+  | .categorical g category, x => decide (x.categorical g ≠ category)
 
-structure Box where
-  lo : Fin 10 → Int
-  hi : Fin 10 → Int
-  wilderness : Fin 4 → Bool
-  soil : Fin 40 → Bool
+structure Box (F G : Type) (C : G → Type) where
+  lo : F → Int
+  hi : F → Int
+  categorical : (g : G) → C g → Bool
 
-def Contains (box : Box) (x : Cell) : Prop :=
+def Contains (box : Box F G C) (x : Cell F G C) : Prop :=
   (∀ f, box.lo f ≤ x.numeric f ∧ x.numeric f ≤ box.hi f) ∧
-  box.wilderness x.wilderness = true ∧ box.soil x.soil = true
+  ∀ g, box.categorical g (x.categorical g) = true
 
 /-- Global numeric implication: the left child repeats a weaker test. -/
-theorem left_weaker_test (f : Fin 10) (a b : Int) (ordered : a ≤ b)
-    (left middle right : Tree Question L) (x : Cell) :
+theorem left_weaker_test (f : F) (a b : Int) (ordered : a ≤ b)
+    (left middle right : Tree (Question F G C) L) (x : Cell F G C) :
     eval truth (.branch (.numeric f a) (.branch (.numeric f b) left middle) right) x =
     eval truth (.branch (.numeric f a) left right) x := by
   by_cases ha : x.numeric f < a
@@ -45,8 +44,8 @@ theorem left_weaker_test (f : Fin 10) (a b : Int) (ordered : a ≤ b)
   · simp [eval, truth, ha]
 
 /-- Global numeric implication: the right child repeats a stronger test. -/
-theorem right_stronger_test (f : Fin 10) (a b : Int) (ordered : b ≤ a)
-    (left middle right : Tree Question L) (x : Cell) :
+theorem right_stronger_test (f : F) (a b : Int) (ordered : b ≤ a)
+    (left middle right : Tree (Question F G C) L) (x : Cell F G C) :
     eval truth (.branch (.numeric f a) left (.branch (.numeric f b) middle right)) x =
     eval truth (.branch (.numeric f a) left right) x := by
   by_cases ha : x.numeric f < a
@@ -55,8 +54,8 @@ theorem right_stronger_test (f : Fin 10) (a b : Int) (ordered : b ≤ a)
     simp [eval, truth, ha, hb]
 
 /-- Threshold absorption retains b and removes the enclosing a question. -/
-theorem absorb_smaller_cut (f : Fin 10) (a b : Int) (ordered : b ≤ a)
-    (left right : Tree Question L) (x : Cell) :
+theorem absorb_smaller_cut (f : F) (a b : Int) (ordered : b ≤ a)
+    (left right : Tree (Question F G C) L) (x : Cell F G C) :
     eval truth (.branch (.numeric f a) (.branch (.numeric f b) left right) right) x =
     eval truth (.branch (.numeric f b) left right) x := by
   by_cases hb : x.numeric f < b
@@ -65,8 +64,8 @@ theorem absorb_smaller_cut (f : Fin 10) (a b : Int) (ordered : b ≤ a)
   · simp [eval, truth, hb]
 
 /-- Complementary threshold absorption retains the larger b question. -/
-theorem absorb_larger_cut (f : Fin 10) (a b : Int) (ordered : a ≤ b)
-    (left right : Tree Question L) (x : Cell) :
+theorem absorb_larger_cut (f : F) (a b : Int) (ordered : a ≤ b)
+    (left right : Tree (Question F G C) L) (x : Cell F G C) :
     eval truth (.branch (.numeric f a) left (.branch (.numeric f b) left right)) x =
     eval truth (.branch (.numeric f b) left right) x := by
   by_cases ha : x.numeric f < a
@@ -74,74 +73,56 @@ theorem absorb_larger_cut (f : Fin 10) (a b : Int) (ordered : a ≤ b)
     simp [eval, truth, ha, hb]
   · simp [eval, truth, ha]
 
-theorem repeated_left_test (q : Question) (left middle right : Tree Question L) (x : Cell) :
+theorem repeated_left_test (q : Question F G C) (left middle right : Tree (Question F G C) L) (x : Cell F G C) :
     eval truth (.branch q (.branch q left middle) right) x =
     eval truth (.branch q left right) x := by
   cases h : truth q x <;> simp [eval, h]
 
-theorem repeated_right_test (q : Question) (left middle right : Tree Question L) (x : Cell) :
+theorem repeated_right_test (q : Question F G C) (left middle right : Tree (Question F G C) L) (x : Cell F G C) :
     eval truth (.branch q left (.branch q middle right)) x =
     eval truth (.branch q left right) x := by
   cases h : truth q x <;> simp [eval, h]
 
 /-- Complete rank-box scope, including fractional raw inputs sharing a rank. -/
-theorem box_entirely_left (box : Box) (f : Fin 10) (cut : Int)
-    (upper : box.hi f < cut) (left right : Tree Question L)
-    (x : Cell) (inside : Contains box x) :
+theorem box_entirely_left (box : Box F G C) (f : F) (cut : Int)
+    (upper : box.hi f < cut) (left right : Tree (Question F G C) L)
+    (x : Cell F G C) (inside : Contains box x) :
     eval truth (.branch (.numeric f cut) left right) x = eval truth left x := by
   have h : x.numeric f < cut := by have := (inside.1 f).2; omega
   simp [eval, truth, h]
 
-theorem box_entirely_right (box : Box) (f : Fin 10) (cut : Int)
-    (lower : cut ≤ box.lo f) (left right : Tree Question L)
-    (x : Cell) (inside : Contains box x) :
+theorem box_entirely_right (box : Box F G C) (f : F) (cut : Int)
+    (lower : cut ≤ box.lo f) (left right : Tree (Question F G C) L)
+    (x : Cell F G C) (inside : Contains box x) :
     eval truth (.branch (.numeric f cut) left right) x = eval truth right x := by
   have h : ¬ x.numeric f < cut := by have := (inside.1 f).1; omega
   simp [eval, truth, h]
 
-theorem wilderness_absent (box : Box) (category : Fin 4)
-    (absent : box.wilderness category = false) (left right : Tree Question L)
-    (x : Cell) (inside : Contains box x) :
-    eval truth (.branch (.wilderness category) left right) x = eval truth left x := by
-  have h : x.wilderness ≠ category := by
+theorem category_absent (box : Box F G C) (g : G) (category : C g)
+    (absent : box.categorical g category = false) (left right : Tree (Question F G C) L)
+    (x : Cell F G C) (inside : Contains box x) :
+    eval truth (.branch (.categorical g category) left right) x = eval truth left x := by
+  have h : x.categorical g ≠ category := by
     intro same
-    have accepted := inside.2.1
+    have accepted := inside.2 g
     rw [same, absent] at accepted
     contradiction
   simp [eval, truth, h]
 
-theorem wilderness_only (box : Box) (category : Fin 4)
-    (only : ∀ k, box.wilderness k = true → k = category) (left right : Tree Question L)
-    (x : Cell) (inside : Contains box x) :
-    eval truth (.branch (.wilderness category) left right) x = eval truth right x := by
-  have h := only x.wilderness inside.2.1
-  simp [eval, truth, h]
-
-theorem soil_absent (box : Box) (category : Fin 40)
-    (absent : box.soil category = false) (left right : Tree Question L)
-    (x : Cell) (inside : Contains box x) :
-    eval truth (.branch (.soil category) left right) x = eval truth left x := by
-  have h : x.soil ≠ category := by
-    intro same
-    have accepted := inside.2.2
-    rw [same, absent] at accepted
-    contradiction
-  simp [eval, truth, h]
-
-theorem soil_only (box : Box) (category : Fin 40)
-    (only : ∀ k, box.soil k = true → k = category) (left right : Tree Question L)
-    (x : Cell) (inside : Contains box x) :
-    eval truth (.branch (.soil category) left right) x = eval truth right x := by
-  have h := only x.soil inside.2.2
+theorem category_only (box : Box F G C) (g : G) (category : C g)
+    (only : ∀ k, box.categorical g k = true → k = category) (left right : Tree (Question F G C) L)
+    (x : Cell F G C) (inside : Contains box x) :
+    eval truth (.branch (.categorical g category) left right) x = eval truth right x := by
+  have h := only (x.categorical g) (inside.2 g)
   simp [eval, truth, h]
 
 /-- A scoped replacement may be used through this exact occurrence. This does
     not grant permission to mutate a shared node reached outside the scope. -/
-theorem guarded_occurrence (guard : Cell → Bool) (box : Box)
+theorem guarded_occurrence (guard : Cell F G C → Bool) (box : Box F G C)
     (scope : ∀ x, guard x = true → Contains box x)
-    (old replacement otherwise : Tree Question L)
+    (old replacement otherwise : Tree (Question F G C) L)
     (equivalent : ∀ x, Contains box x → eval truth old x = eval truth replacement x)
-    (x : Cell) :
+    (x : Cell F G C) :
     (if guard x then eval truth old x else eval truth otherwise x) =
     (if guard x then eval truth replacement x else eval truth otherwise x) := by
   cases h : guard x

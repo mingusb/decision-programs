@@ -3,7 +3,7 @@ import SignatureEnumeration
 /- Exact finite Cartesian cell enumeration. All arithmetic here is unbounded Nat/Int;
    machine overflow checks and IEEE/CUDA refinement remain implementation duties. -/
 namespace ConverterMixedRadix
-open ConverterRankBox ConverterGuarantees ConverterSignatureEnumeration
+open ConverterDomain ConverterGuarantees ConverterSignatureEnumeration
 variable {P W L X : Type}
 
 def volume : List Nat → Nat
@@ -280,113 +280,6 @@ theorem finite_key_has_word (k : Int)
     refine ⟨⟨false, ⟨k.toNat, h⟩⟩, ?_⟩
     simp only [orderedKey, Bool.false_eq_true, ↓reduceIte, Int.ofNat_eq_natCast]
     omega
-
-structure RawKeys where
-  numeric : Fin 10 → Int
-  wilderness : Nat
-  soil : Nat
-
-def RawKeys.Valid (x : RawKeys) : Prop :=
-  (∀ f, -2139095039 ≤ x.numeric f ∧ x.numeric f ≤ 2139095039) ∧
-  x.wilderness < 4 ∧ x.soil < 40
-
-inductive Question where
-  | numeric : Fin 10 → Int → Question
-  | wilderness : Fin 4 → Int → Question
-  | soil : Fin 40 → Int → Question
-
-def truth : Question → RawKeys → Bool
-  | .numeric f c, x => decide (x.numeric f < c)
-  | .wilderness q c, x => decide (indicatorKey 1065353216 x.wilderness q.val < c)
-  | .soil q c, x => decide (indicatorKey 1065353216 x.soil q.val < c)
-
-structure Profile where
-  cuts : Fin 10 → List Int
-  wilderness : List Nat
-  soil : List Nat
-  otherWild : Nat
-  otherSoil : Nat
-
-/-- If OTHER is needed it is a valid untested category. If all categories are
-    tested the antecedent is impossible, and no OTHER state is needed. -/
-def Profile.Valid (p : Profile) : Prop :=
-  (∀ x, x < 4 → x ∉ p.wilderness → p.otherWild < 4 ∧ p.otherWild ∉ p.wilderness) ∧
-  (∀ x, x < 40 → x ∉ p.soil → p.otherSoil < 40 ∧ p.otherSoil ∉ p.soil)
-
-def Profile.Covers (p : Profile) : Question → Prop
-  | .numeric f c => c ∈ p.cuts f
-  | .wilderness q c => 0 < c ∧ c ≤ 1065353216 → q.val ∈ p.wilderness
-  | .soil q c => 0 < c ∧ c ≤ 1065353216 → q.val ∈ p.soil
-
-def representative (p : Profile) (x : RawKeys) : RawKeys :=
-  ⟨fun f => endpoint (-2139095039) (x.numeric f) (p.cuts f),
-   categoryRep p.wilderness p.otherWild x.wilderness,
-   categoryRep p.soil p.otherSoil x.soil⟩
-
-theorem representative_valid (p : Profile) (pv : p.Valid) (x : RawKeys)
-    (valid : x.Valid) : (representative p x).Valid := by
-  constructor
-  · intro f
-    have h := endpoint_bounds (-2139095039) (x.numeric f) (p.cuts f) (valid.1 f).1
-    exact ⟨h.1, Int.le_trans h.2 (valid.1 f).2⟩
-  · constructor
-    · exact category_rep_valid p.wilderness p.otherWild x.wilderness 4 valid.2.1
-        (fun h => (pv.1 _ valid.2.1 h).1)
-    · exact category_rep_valid p.soil p.otherSoil x.soil 40 valid.2.2
-        (fun h => (pv.2 _ valid.2.2 h).1)
-
-theorem representative_preserves_question (p : Profile) (pv : p.Valid)
-    (x : RawKeys) (valid : x.Valid) (q : Question) (covered : p.Covers q) :
-    truth q (representative p x) = truth q x := by
-  cases q with
-  | numeric f c =>
-    exact endpoint_preserves_signature (-2139095039) (x.numeric f) (p.cuts f)
-      (valid.1 f).1 c covered
-  | wilderness q c =>
-    exact category_question_preserved p.wilderness p.otherWild x.wilderness q.val
-      1065353216 c (by decide) covered (fun h => (pv.1 _ valid.2.1 h).2)
-  | soil q c =>
-    exact category_question_preserved p.soil p.otherSoil x.soil q.val
-      1065353216 c (by decide) covered (fun h => (pv.2 _ valid.2.2 h).2)
-
-theorem concrete_grid_same_ordered_words (p : Profile) (pv : p.Valid)
-    (forest : List (Tree Question W))
-    (covers : ∀ tree ∈ forest, ∀ q ∈ predicates tree, p.Covers q)
-    (x : RawKeys) (valid : x.Valid) :
-    orderedWords truth forest (representative p x) = orderedWords truth forest x := by
-  apply List.map_congr_left
-  intro tree ht
-  apply same_questions_same_leaf
-  intro q hq
-  exact representative_preserves_question p pv x valid q (covers tree ht q hq)
-
-theorem concrete_grid_same_native (p : Profile) (pv : p.Valid)
-    (forest : List (Tree Question W))
-    (covers : ∀ tree ∈ forest, ∀ q ∈ predicates tree, p.Covers q)
-    (nativeTransform : List W → L) (x : RawKeys) (valid : x.Valid) :
-    nativeTransform (orderedWords truth forest (representative p x)) =
-      nativeTransform (orderedWords truth forest x) := by
-  rw [concrete_grid_same_ordered_words p pv forest covers x valid]
-
-/-- A finite audit of all M encoded cells implies whole-source native classes.
-    The recipe is a metadata/index correspondence, not an assumed class equality. -/
-theorem finite_cartesian_native_audit (p : Profile) (pv : p.Valid)
-    (forest : List (Tree Question W))
-    (covers : ∀ tree ∈ forest, ∀ q ∈ predicates tree, p.Covers q)
-    (nativeTransform : List W → L) (radices : List Nat)
-    (positive : ∀ r ∈ radices, 0 < r)
-    (coordinates : RawKeys → List Nat) (sample : List Nat → RawKeys)
-    (within : ∀ x, x.Valid → Within radices (coordinates x))
-    (recipe : ∀ x, x.Valid → sample (coordinates x) = representative p x)
-    (table : Nat → L)
-    (audited : ∀ i, i < volume radices → table i =
-      nativeTransform (orderedWords truth forest (sample (decode radices i)))) :
-    ∀ x, x.Valid → table (encode radices (coordinates x)) =
-      nativeTransform (orderedWords truth forest x) := by
-  intro x hx
-  rw [audited _ (encode_bound radices (coordinates x) (within x hx))]
-  rw [decode_encode radices (coordinates x) positive (within x hx), recipe x hx]
-  exact concrete_grid_same_native p pv forest covers nativeTransform x hx
 
 /-- For the unshared binary fold with exactly one leaf per cell, this identity
     charges occurrences before hash-consing; it is independent of virtual UInt64. -/

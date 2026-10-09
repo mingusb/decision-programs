@@ -1,4 +1,6 @@
 #pragma once
+#include "class_native_source_contract.hpp"
+#include "class_native_model_json.hpp"
 
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
@@ -123,7 +125,7 @@ inline SourceData read_source(const fs::path& path) {
     SourceData out;
     out.bytes = read_text(path);
     out.identity = sha256(out.bytes);
-    auto document = json::parse(out.bytes);
+    auto document = dp_native_json::parse(out.bytes);
     auto& learner = document.at("learner");
     auto& booster = learner.at("gradient_booster");
     auto& parameters = learner.at("learner_model_param");
@@ -150,6 +152,7 @@ inline SourceData read_source(const fs::path& path) {
     auto& trees = model.at("trees");
     out.channels = integers(model.at("tree_info"), "tree_info");
     if (!trees.is_array() || trees.size() != out.channels.size() || trees.empty()) throw std::runtime_error("invalid source tree count");
+    dp_native_source_contract::require_unit_tree_weights(model, trees.size());
     if (decimal(model.at("gbtree_model_param").at("num_trees"), "num_trees") != trees.size())
         throw std::runtime_error("source num_trees differs from tree storage");
     const auto iteration = integers(model.at("iteration_indptr"), "iteration_indptr");
@@ -189,6 +192,7 @@ inline SourceData read_source(const fs::path& path) {
             bool terminal = left[i] == -1 && right[i] == -1;
             if (!terminal && (left[i] < 0 || right[i] < 0 || size_t(left[i]) >= n || size_t(right[i]) >= n))
                 throw std::runtime_error("source fork requires two valid children");
+            if (!terminal) dp_native_source_contract::require_numeric_successors(int32_t(i), left[i], right[i]);
             if (!terminal && (feature[i] < 0 || feature[i] >= out.features || std::isnan(cut[i])))
                 throw std::runtime_error("invalid source predicate");
             if (terminal && !std::isfinite(cut[i])) throw std::runtime_error("nonfinite source leaf response");
